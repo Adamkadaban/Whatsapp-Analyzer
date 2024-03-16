@@ -1,8 +1,10 @@
 [package]
-name = "WhatsappAnalyzerV2"
+name = "whatsapp_analyzer_v2"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+polars = { version = "=0.38.0", features = ["default", "lazy"]}
+rand = "0.8.5"
