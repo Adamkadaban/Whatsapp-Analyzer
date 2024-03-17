@@ -1,29 +1,29 @@
 // for data analysis
 use polars::prelude::*;
 
-use std::collections::BTreeMap;
+// use std::collections::BTreeMap;
 // for argv
 use std::env;
 
-// for reading in files
-use std::fs::{read_dir, File};
-use std::io::{self, BufRead};
-use std::path::Path;
+// // for reading in files
+// use std::fs::{read_dir, File};
+// use std::io::{self, BufRead};
+// use std::path::Path;
 
 // for storing dates
 use chrono::{NaiveDateTime, Timelike}; 
 
 // for parsing data from file to turn into dataframe
-use regex::Regex;
+// use regex::Regex;
 
-use std::process;
+// use std::process;
 
 
-fn read_lines<P>(filename: P) -> io::Result<io::Lines<io::BufReader<File>>>
-where P: AsRef<Path>, {
-    let file = File::open(filename)?;
-    Ok(io::BufReader::new(file).lines())
-}
+// fn read_lines<P>(filename: P) -> io::Result<io::Lines<io::BufReader<File>>>
+// where P: AsRef<Path>, {
+//     let file = File::open(filename)?;
+//     Ok(io::BufReader::new(file).lines())
+// }
 
 /*
 fn parse_whatsapp_file(filename: &String) {
@@ -85,17 +85,36 @@ fn parse_whatsapp_file(filename: &String) {
 
 fn parse_whatsapp_file(filepath: &String) {
     // let captures = col("column_1");
-    let mut df = CsvReader::from_path(filepath).expect("Filepath not found")
+    let df_raw = CsvReader::from_path(filepath).expect("Filepath not found")
         .with_separator('\r' as u8)
         .has_header(false)
         .with_columns(  // takes in Option<Vec<String>>
             // captures.extract_groups(r"\[(.*)\] (.*): (.*)")
             // Some(vec!["Date".to_string(), "Name".to_string(), "Message".to_string()])
-            Some(vec!["column_1".into()])
+            // Some(Vec::from_iter(&col("column_1").str().extract_groups(r"\[(\d{1,2}\/\d{1,2}\/\d{1,2}, \d{1,2}:\d{2}:\d{2} [AP]M)\] ([^:]+): (.*)").unwrap())),
+            Some(vec!["column_1".to_string()])
         )
         .truncate_ragged_lines(true)
         .finish().unwrap();
-    
+
+    let groups = df_raw
+        .clone()
+        .lazy()
+        .select([col("column_1").str().extract_groups(r"\[(.*)\] ([^:]+): (.*)").unwrap()])
+        .collect().unwrap();
+
+    let df = groups
+        .clone()
+        .lazy()
+        .select([
+            col("column_1")
+            .struct_()
+            .rename_fields(["dt".into(), "name".into(), "message".into()].to_vec())
+        ])
+        .unnest(["column_1"])
+        .collect().unwrap();
+
+    // println!("{}", groups);
     println!("{}", df);
 }
 
