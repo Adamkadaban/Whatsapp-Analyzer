@@ -114,8 +114,27 @@ fn parse_whatsapp_file(filepath: &String) {
         .unnest(["column_1"])
         .collect().unwrap();
 
+    let df_final = df
+        .clone()
+        .lazy()
+        .select([
+            col("dt").str().strptime(
+                DataType::Datetime(TimeUnit::Milliseconds, None), // milliseconds?
+                StrptimeOptions {
+                    format: Some("%D, %r".into()),
+                    strict: true,
+                    exact: false,
+                    cache: true
+                },
+                lit("raise"), // what does this mean?
+            ),
+            col("name"),
+            col("message")
+        ]).
+        collect().unwrap();
+
     // println!("{}", groups);
-    println!("{}", df);
+    println!("{}", df_final); // how can I combine all of these into one like the python one?
 }
 
 fn main(){
