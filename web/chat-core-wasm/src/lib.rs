@@ -3,6 +3,7 @@ use once_cell::sync::OnceCell;
 use regex::Regex;
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use stopwords::{Language, Spark, Stopwords};
 use unicode_segmentation::UnicodeSegmentation;
 use wasm_bindgen::prelude::*;
 
@@ -12,13 +13,13 @@ pub fn init_panic_hook() {
     console_error_panic_hook::set_once();
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 struct Count {
     label: String,
     value: u32,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 struct HourCount {
     hour: u32,
     value: u32,
@@ -46,6 +47,8 @@ struct Summary {
     fun_facts: Vec<FunFact>,
     person_stats: Vec<PersonStat>,
     per_person_daily: Vec<PersonDaily>,
+    conversation_starters: Vec<Count>,
+    conversation_count: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -89,6 +92,98 @@ struct Message {
     sender: String,
     text: String,
 }
+
+// Fixed 30-minute gap threshold to define a new conversation
+const CONVERSATION_GAP_MINUTES: i64 = 30;
+const WHATSAPP_EXTRAS: [&str; 27] = [
+    "<media",
+    "<attached:",
+    "audio",
+    "omitted>",
+    "bild",
+    "image",
+    "<medien",
+    "ausgeschlossen>",
+    "weggelassen",
+    "omitted",
+    "_",
+    "_weggelassen>",
+    "_ommited>",
+    "_omesso>",
+    "_omitted",
+    "_attached",
+    "edited>",
+    "<this",
+    "message",
+    "missed",
+    "voice",
+    "call.",
+    "location:",
+    "deleted",
+    "ich",
+    "du",
+    "wir",
+];
+
+fn stopwords_set() -> &'static HashSet<&'static str> {
+    static STOPWORDS: OnceCell<HashSet<&'static str>> = OnceCell::new();
+    STOPWORDS.get_or_init(|| {
+        let mut set: HashSet<&'static str> =
+            Spark::stopwords(Language::English)
+                .unwrap_or_default()
+                .iter()
+                .copied()
+                .collect();
+        for extra in WHATSAPP_EXTRAS {
+            set.insert(extra);
+        }
+        set
+    })
+}
+
+fn conversation_initiations(messages: &[Message]) -> (Vec<Count>, usize) {
+    conversation_initiations_with_gap(messages, CONVERSATION_GAP_MINUTES)
+}
+
+fn conversation_initiations_with_gap(messages: &[Message], gap_minutes: i64) -> (Vec<Count>, usize) {
+    if messages.is_empty() {
+        return (Vec::new(), 0);
+    }
+
+    let mut sorted = messages.to_vec();
+    sorted.sort_by_key(|m| m.dt);
+
+    let mut initiations: HashMap<String, u32> = HashMap::new();
+    let mut conversation_count = 1usize;
+    let mut prev_dt = sorted[0].dt;
+    let mut current_initiator_recorded = true;
+
+    *initiations.entry(sorted[0].sender.clone()).or_insert(0) += 1;
+
+    for m in sorted.iter().skip(1) {
+        let gap = (m.dt - prev_dt).num_minutes();
+        if gap > gap_minutes {
+            conversation_count += 1;
+            current_initiator_recorded = false;
+        }
+
+        if !current_initiator_recorded {
+            *initiations.entry(m.sender.clone()).or_insert(0) += 1;
+            current_initiator_recorded = true;
+        }
+
+        prev_dt = m.dt;
+    }
+
+    let mut items: Vec<Count> = initiations
+        .into_iter()
+        .map(|(label, value)| Count { label, value })
+        .collect();
+    items.sort_by_key(|c| std::cmp::Reverse(c.value));
+    (items, conversation_count)
+}
+
+
 
 fn re_bracket() -> &'static Regex {
     static RE: OnceCell<Regex> = OnceCell::new();
@@ -274,8 +369,26 @@ fn monthly_counts(messages: &[Message]) -> Vec<Count> {
 fn emoji_re() -> &'static Regex {
     static RE: OnceCell<Regex> = OnceCell::new();
     RE.get_or_init(|| {
-        Regex::new(r"([\u{1F1E6}-\u{1F1FF}]{2}|[\u{1F300}-\u{1FAFF}]|[\u{2600}-\u{27BF}])")
-            .expect("emoji regex")
+        // Match complete emoji sequences including:
+        // - Regional indicator pairs (flags like 🇺🇸)
+        // - Base emoji with optional skin tone modifiers (🏻-🏿) and variation selectors (️)
+        // - ZWJ sequences (👨‍👩‍👧‍👦) where emojis are joined by \u{200D}
+        Regex::new(
+            r"(?x)
+            [\u{1F1E6}-\u{1F1FF}]{2}  # Regional indicator pairs (flags)
+            |
+            (?:
+                [\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2300}-\u{23FF}\u{2B50}-\u{2B55}\u{203C}\u{2049}\u{25AA}\u{25AB}\u{25B6}\u{25C0}\u{25FB}-\u{25FE}\u{00A9}\u{00AE}\u{2122}\u{2139}\u{2194}-\u{2199}\u{21A9}\u{21AA}\u{231A}\u{231B}\u{2328}\u{23CF}\u{23E9}-\u{23F3}\u{23F8}-\u{23FA}\u{24C2}\u{25AA}\u{25AB}\u{25B6}\u{25C0}\u{2934}\u{2935}\u{3030}\u{303D}\u{3297}\u{3299}]
+                [\u{1F3FB}-\u{1F3FF}]?  # Optional skin tone modifier
+                \u{FE0F}?               # Optional variation selector
+                (?:\u{200D}             # ZWJ
+                    [\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2640}\u{2642}\u{2695}\u{2696}\u{2708}\u{2764}]
+                    [\u{1F3FB}-\u{1F3FF}]?
+                    \u{FE0F}?
+                )*                      # Zero or more ZWJ + emoji
+            )
+            "
+        ).expect("emoji regex")
     })
 }
 
@@ -296,7 +409,7 @@ fn top_emojis(messages: &[Message], take: usize) -> Vec<Count> {
 }
 
 fn top_words(messages: &[Message], take: usize, filter_stop: bool) -> Vec<Count> {
-    let stop = stopwords();
+    let stop = stopwords_set();
 
     let mut map = HashMap::new();
     for text in messages.iter().map(|m| m.text.as_str()) {
@@ -321,7 +434,7 @@ fn top_words(messages: &[Message], take: usize, filter_stop: bool) -> Vec<Count>
 }
 
 fn word_cloud(messages: &[Message], take: usize, filter_stop: bool) -> Vec<Count> {
-    let stop = stopwords();
+    let stop = stopwords_set();
     let mut map = HashMap::new();
     for text in messages.iter().map(|m| m.text.as_str()) {
         for token in text.unicode_words() {
@@ -348,19 +461,6 @@ fn emoji_cloud(messages: &[Message], take: usize) -> Vec<Count> {
     let mut counts = top_emojis(messages, usize::MAX);
     counts.truncate(take);
     counts
-}
-
-fn stopwords() -> HashSet<&'static str> {
-    [
-        "the", "and", "of", "to", "in", "a", "is", "it", "i", "you", "for", "on", "that",
-        "this", "was", "with", "at", "be", "are", "my", "me", "we", "they", "them", "your",
-        "ich", "du", "wir", "aber", "<media", "<attached:", "audio", "omitted>", "bild", "image",
-        "<medien", "ausgeschlossen>", "weggelassen", "omitted", "_", "_weggelassen>", "_ommited>",
-        "_omesso>", "_omitted", "_attached", "edited>", "<this", "message", "missed", "voice",
-        "call.", "location:", "deleted",
-    ]
-    .into_iter()
-    .collect()
 }
 
 fn deleted_counts(messages: &[Message]) -> (u32, u32) {
@@ -580,7 +680,7 @@ fn person_stats(messages: &[Message]) -> Vec<PersonStat> {
 
         let mut top_emoji_vec: Vec<_> = emoji_freq.into_iter().collect();
         top_emoji_vec.sort_by_key(|(_, v)| std::cmp::Reverse(*v));
-        top_emoji_vec.truncate(5);
+        top_emoji_vec.truncate(10);
         let top_emojis = top_emoji_vec
             .into_iter()
             .map(|(label, value)| Count { label, value })
@@ -615,6 +715,7 @@ fn summarize(raw: &str, top_words_n: usize, top_emojis_n: usize) -> Result<Summa
     }
 
     let (del_you, del_others) = deleted_counts(&messages);
+    let (conversation_starters, conversation_count) = conversation_initiations(&messages);
     Ok(Summary {
         total_messages: messages.len(),
         by_sender: count_by_sender(&messages),
@@ -636,6 +737,8 @@ fn summarize(raw: &str, top_words_n: usize, top_emojis_n: usize) -> Result<Summa
         fun_facts: fun_facts(&messages),
         person_stats: person_stats(&messages),
         per_person_daily: per_person_daily(&messages),
+        conversation_starters,
+        conversation_count,
     })
 }
 
@@ -666,6 +769,9 @@ mod tests {
         assert!(!summary.word_cloud_no_stop.is_empty());
         assert!(!summary.per_person_daily.is_empty());
         assert_eq!(summary.timeline[1].value, 1);
+        assert_eq!(summary.conversation_count, 4);
+        assert_eq!(summary.conversation_starters[0].label, "Addy");
+        assert_eq!(summary.conversation_starters[0].value, 3);
     }
 
     #[test]
