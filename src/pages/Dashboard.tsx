@@ -1,3 +1,4 @@
+import JSZip from "jszip";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from "react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, LabelList, Line, LineChart, Pie, PieChart, PolarAngleAxis, PolarGrid, Radar, RadarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import WordCloud from "../components/WordCloud";
@@ -217,33 +218,273 @@ export default function Dashboard() {
   const sentimentOpacity = (idx: number) => (activeSentimentIndex === null || activeSentimentIndex === idx ? 1 : 0.3);
 
   const [fileName, setFileName] = useState<string | null>(null);
+  const [fileCount, setFileCount] = useState(0);
   const [analyzing, setAnalyzing] = useState(false);
 
-  async function processFile(file: File) {
+  const stripInvisibles = (text: string) => text.replace(/[\u200b-\u200f\u202a-\u202e\u2060-\u2063\ufeff]/g, "");
+
+  const hasMeaningfulText = (text: string) => {
+    if (!text) return false;
+    const cleaned = stripInvisibles(text);
+    if (cleaned.trim().length === 0) return false;
+    // Accept if there's any non-control, non-whitespace rune after removing invisibles.
+    return /[^\s\p{C}]/u.test(cleaned);
+  };
+
+  const decodeBufferWithFallback = (buffer: ArrayBuffer): { text: string; encoding: string } | null => {
+    const candidates: string[] = ["utf-8", "utf-16le", "utf-16be"];
+    for (const enc of candidates) {
+      try {
+        const decoder = new TextDecoder(enc, { fatal: false });
+        const text = decoder.decode(new Uint8Array(buffer));
+        if (hasMeaningfulText(text)) {
+          return { text, encoding: enc };
+        }
+      } catch (err) {
+        console.warn(`Failed to decode with ${enc}`, err);
+      }
+    }
+    return null;
+  };
+
+  const readTextWithFallback = async (file: File): Promise<{ text: string; encoding: string } | null> => {
+    const prefix = `readTextWithFallback(${file.name})`;
+    const log = (...args: unknown[]) => console.info(prefix, ...args);
+    const errors: unknown[] = [];
+
+    const readWithFileReader = async (): Promise<ArrayBuffer | null> => {
+      log("FileReader: start");
+      return await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result instanceof ArrayBuffer ? reader.result : null);
+        reader.onerror = () => reject(reader.error ?? new Error("FileReader failed"));
+        reader.readAsArrayBuffer(file);
+      });
+    };
+
+    const readViaObjectUrl = async (mode: "text" | "arrayBuffer") => {
+      const url = URL.createObjectURL(file);
+      try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`objectURL fetch failed: ${res.status}`);
+        const out = mode === "text" ? await res.text() : await res.arrayBuffer();
+        log(`objectURL ${mode}: success`, mode === "text" ? { length: (out as string).length } : { bytes: (out as ArrayBuffer).byteLength });
+        return out;
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    };
+
+    const readFromClone = async (mode: "text" | "arrayBuffer") => {
+      const clone = new Blob([file]);
+      try {
+        const res = mode === "text" ? await new Response(clone).text() : await new Response(clone).arrayBuffer();
+        log(`clone ${mode}: success`, mode === "text" ? { length: (res as string).length } : { bytes: (res as ArrayBuffer).byteLength });
+        return res;
+      } catch (err) {
+        log(`clone ${mode}: failed`, err);
+        errors.push(err);
+        return null;
+      }
+    };
+
+    const safeText = async (): Promise<string | null> => {
+      try {
+        const res = await file.text();
+        log("text(): success", { length: res.length });
+        return res;
+      } catch (err) {
+        log("text(): failed", err);
+        errors.push(err);
+        try {
+          const res = await new Response(file).text();
+          log("Response.text(): success", { length: res.length });
+          return res;
+        } catch (err2) {
+          log("Response.text(): failed", err2);
+          errors.push(err2);
+          try {
+            const res = await readViaObjectUrl("text");
+            return typeof res === "string" ? res : null;
+          } catch (err3) {
+            log("objectURL text(): failed", err3);
+            errors.push(err3);
+          }
+
+          const cloneText = await readFromClone("text");
+          if (typeof cloneText === "string") return cloneText;
+
+          try {
+            const buf = await readWithFileReader();
+            if (!buf) return null;
+            const decoded = new TextDecoder("utf-8", { fatal: false }).decode(new Uint8Array(buf));
+            log("FileReader decoded utf-8", { length: decoded.length });
+            return decoded;
+          } catch (err4) {
+            errors.push(err4);
+            console.warn("Failed to read file via text()/Response/FileReader/objectURL", errors);
+            return null;
+          }
+        }
+      }
+    };
+
+    const safeArrayBuffer = async (): Promise<ArrayBuffer | null> => {
+      try {
+        const res = await file.arrayBuffer();
+        log("arrayBuffer(): success", { bytes: res.byteLength });
+        return res;
+      } catch (err) {
+        log("arrayBuffer(): failed", err);
+        errors.push(err);
+        try {
+          const res = await new Response(file).arrayBuffer();
+          log("Response.arrayBuffer(): success", { bytes: res.byteLength });
+          return res;
+        } catch (err2) {
+          log("Response.arrayBuffer(): failed", err2);
+          errors.push(err2);
+          try {
+            const res = await readViaObjectUrl("arrayBuffer");
+            if (res instanceof ArrayBuffer) return res;
+          } catch (err3) {
+            log("objectURL arrayBuffer(): failed", err3);
+            errors.push(err3);
+          }
+
+          const cloneBuf = await readFromClone("arrayBuffer");
+          if (cloneBuf instanceof ArrayBuffer) return cloneBuf;
+
+          try {
+            const res = await readWithFileReader();
+            if (res) log("FileReader arrayBuffer: success", { bytes: res.byteLength });
+            return res;
+          } catch (err4) {
+            errors.push(err4);
+            console.warn("Failed to read file via arrayBuffer()/Response/FileReader/objectURL", errors);
+            return null;
+          }
+        }
+      }
+    };
+
+    // First try the browser's default text decode (utf-8).
+    const utf8 = await safeText();
+    if (utf8 && hasMeaningfulText(utf8)) {
+        log("hasMeaningfulText utf-8: yes");
+        return { text: utf8, encoding: "utf-8" };
+    }
+    log("hasMeaningfulText utf-8: no or read failed");
+
+    // Fall back to checking utf-16 encodings in case the export is UTF-16.
+    const buffer = await safeArrayBuffer();
+    if (!buffer) {
+      log("arrayBuffer fallback: null (giving up)");
+      return null;
+    }
+    const decoded = decodeBufferWithFallback(buffer);
+    if (decoded) {
+      log("decodeBufferWithFallback: success", { encoding: decoded.encoding, length: decoded.text.length });
+    } else {
+      log("decodeBufferWithFallback: failed for utf-16 attempts");
+    }
+    return decoded;
+  };
+
+  async function extractZipText(file: File) {
+    const buffer = await file.arrayBuffer();
+    const zip = await JSZip.loadAsync(buffer);
+    const entries = Object.values(zip.files).filter((entry) => {
+      if (entry.dir) return false;
+      const lower = entry.name.toLowerCase();
+      return lower.endsWith(".txt");
+    });
+    if (!entries.length) {
+      throw new Error(`No .txt files found in zip: ${file.name}`);
+    }
+
+    const decoded = await Promise.all(
+      entries.map(async (entry) => {
+        const buf = await entry.async("arraybuffer");
+        const hit = decodeBufferWithFallback(buf);
+        return { name: entry.name, text: hit?.text ?? "", encoding: hit?.encoding ?? "unknown" };
+      })
+    );
+    return { texts: decoded.map((d) => d.text), names: decoded.map((d) => d.name) };
+  }
+
+  async function processFiles(fileList: FileList | File[]) {
+    const files = Array.from(fileList);
+    if (!files.length) return;
+
     setError(null);
     setPendingSummary(null);
     setSummary(null);
-    setFileName(file.name);
+    setFileName(files.length === 1 ? files[0].name : `${files.length} files`);
+    setFileCount(files.length);
     setProcessing(true);
     setAnalyzing(false);
 
     try {
-      if (file.size === 0) {
-        throw new Error("This file is empty. Export again and try.");
+      const texts: string[] = [];
+      const labels: string[] = [];
+      const skipped: string[] = [];
+
+      const pushText = (name: string, text: string) => {
+        const cleaned = stripInvisibles(text);
+        if (hasMeaningfulText(cleaned)) {
+          texts.push(cleaned);
+          labels.push(name);
+        } else {
+          skipped.push(`${name} (no text found)`);
+        }
+      };
+
+      for (const file of files) {
+        const displayName = file.name;
+        const lower = displayName.toLowerCase();
+
+        try {
+          if (lower.endsWith(".zip")) {
+            const { texts: zipTexts, names } = await extractZipText(file);
+            zipTexts.forEach((t, idx) => pushText(`${displayName}:${names[idx]}`, t));
+            labels.push(`${displayName} (${names.length} txt)`);
+          } else if (lower.endsWith(".txt")) {
+            const decoded = await readTextWithFallback(file);
+            if (decoded) {
+              pushText(displayName, decoded.text);
+            } else {
+              skipped.push(`${displayName} (unreadable text; tried utf-8/utf-16)`);
+            }
+          } else {
+            skipped.push(`${displayName} (unsupported type)`);
+          }
+        } catch (err) {
+          const reason = err instanceof Error ? err.name || err.message : "unknown error";
+          skipped.push(`${displayName} (failed to read: ${reason})`);
+          console.error("Failed to read file", displayName, err);
+        }
       }
 
-      const text = await file.text();
-      if (!text.trim()) {
-        throw new Error("No text found in this export.");
+      if (!texts.length) {
+        const detail = skipped.length ? ` Skipped: ${skipped.join(", ")}` : "";
+        throw new Error(`No text found. Upload one or more .txt files or a .zip containing .txt exports.${detail}`);
       }
 
-      const res = await analyzeText(text);
+      const combinedText = texts.join("\n");
+      const res = await analyzeText(combinedText);
       setPendingSummary(res);
+      setFileName(labels.join(", "));
+
+      if (skipped.length) {
+        setError(`Some files were skipped: ${skipped.join(", ")}`);
+      }
     } catch (err) {
       console.error(err);
       const message = err instanceof Error ? err.message : "Failed to analyze chat. Please try another file.";
       setError(message);
       setFileName(null);
+      setFileCount(0);
     } finally {
       setProcessing(false);
     }
@@ -266,17 +507,18 @@ export default function Dashboard() {
   }
 
   async function onFileChange(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    await processFile(file);
+    const files = e.target.files;
+    if (!files?.length) return;
+    await processFiles(files);
+    e.target.value = "";
   }
 
   async function handleDrop(e: DragEvent<HTMLDivElement>) {
     e.preventDefault();
     setIsDragging(false);
-    const file = e.dataTransfer.files?.[0];
-    if (!file) return;
-    await processFile(file);
+    const files = e.dataTransfer.files;
+    if (!files?.length) return;
+    await processFiles(files);
   }
 
   function handleDragOver(e: DragEvent<HTMLDivElement>) {
@@ -299,6 +541,7 @@ export default function Dashboard() {
     setSummary(null);
     setPendingSummary(null);
     setFileName(null);
+    setFileCount(0);
     setError(null);
     setExportError(null);
   }
@@ -354,7 +597,9 @@ export default function Dashboard() {
             {processing && (
               <>
                 <div className="spinner" aria-hidden="true" />
-                <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 6 }}>Loading file…</div>
+                <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 6 }}>
+                  {fileCount > 1 ? "Loading files…" : "Loading file…"}
+                </div>
                 <div style={{ color: "var(--muted)" }}>{fileName}</div>
               </>
             )}
@@ -852,11 +1097,17 @@ export default function Dashboard() {
                       fontWeight: 700,
                     }}
                   >
-                    Choose .txt export
-                    <input type="file" accept="text/plain,.txt" style={{ display: "none" }} onChange={onFileChange} />
+                    Upload .txt file or a zip file
+                    <input
+                      type="file"
+                      accept=".txt,.zip"
+                      multiple
+                      style={{ display: "none" }}
+                      onChange={onFileChange}
+                    />
                   </label>
                   <span style={{ color: "var(--muted)", fontSize: 14 }}>
-                    ...or drag & drop your WhatsApp export here
+                    or drag & drop
                   </span>
                 </div>
                 {error && <span style={{ color: "#ff7edb" }}>{error}</span>}
