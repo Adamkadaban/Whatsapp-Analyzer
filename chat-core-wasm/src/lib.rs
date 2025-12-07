@@ -678,6 +678,10 @@ fn is_system_message(msg: &Message) -> bool {
             .contains("Messages and calls are end-to-end encrypted")
 }
 
+fn is_media_omitted_message(text: &str) -> bool {
+    text.trim().eq_ignore_ascii_case("<media omitted>")
+}
+
 fn count_by_sender(messages: &[Message]) -> Vec<Count> {
     let mut map = HashMap::new();
     for m in messages {
@@ -813,7 +817,11 @@ fn top_words(messages: &[Message], take: usize, filter_stop: bool) -> Vec<Count>
     let stop = stopwords_set();
 
     let mut map = HashMap::new();
-    for text in messages.iter().map(|m| m.text.as_str()) {
+    for m in messages {
+        let text = m.text.as_str();
+        if is_media_omitted_message(text) {
+            continue;
+        }
         for token in tokenize(text, filter_stop, &stop) {
             if token.len() < 3 {
                 continue;
@@ -833,7 +841,11 @@ fn top_words(messages: &[Message], take: usize, filter_stop: bool) -> Vec<Count>
 fn word_cloud(messages: &[Message], take: usize, filter_stop: bool) -> Vec<Count> {
     let stop = stopwords_set();
     let mut map = HashMap::new();
-    for text in messages.iter().map(|m| m.text.as_str()) {
+    for m in messages {
+        let text = m.text.as_str();
+        if is_media_omitted_message(text) {
+            continue;
+        }
         for token in tokenize(text, filter_stop, &stop) {
             if token.is_empty() {
                 continue;
@@ -874,12 +886,17 @@ fn tokenize<'a>(text: &'a str, filter_stop: bool, stop: &HashSet<&'static str>) 
         .collect()
 }
 
-fn top_phrases(messages: &[Message], take: usize, filter_stop: bool) -> Vec<Count> {
+fn top_phrases(messages: &[Message], take: usize, _filter_stop: bool) -> Vec<Count> {
     let stop = stopwords_set();
     let mut map: HashMap<String, u32> = HashMap::new();
 
-    for text in messages.iter().map(|m| m.text.as_str()) {
-        let tokens = tokenize(text, filter_stop, &stop);
+    for m in messages {
+        let text = m.text.as_str();
+        if is_media_omitted_message(text) {
+            continue;
+        }
+        // Keep stop-words in phrases so the full expression stays intact.
+        let tokens = tokenize(text, false, &stop);
         if tokens.len() < 2 {
             continue;
         }
@@ -908,12 +925,16 @@ fn top_phrases(messages: &[Message], take: usize, filter_stop: bool) -> Vec<Coun
     items
 }
 
-fn per_person_phrases(messages: &[Message], take: usize, filter_stop: bool) -> Vec<PersonPhrases> {
+fn per_person_phrases(messages: &[Message], take: usize, _filter_stop: bool) -> Vec<PersonPhrases> {
     let stop = stopwords_set();
     let mut map: HashMap<String, HashMap<String, u32>> = HashMap::new();
 
     for m in messages {
-        let tokens = tokenize(&m.text, filter_stop, &stop);
+        if is_media_omitted_message(&m.text) {
+            continue;
+        }
+        // Keep stop-words in phrases so the full expression stays intact.
+        let tokens = tokenize(&m.text, false, &stop);
         if tokens.len() < 2 {
             continue;
         }
@@ -1082,8 +1103,13 @@ fn fun_facts(messages: &[Message]) -> Vec<FunFact> {
         let mut longest_message = 0u32;
         let mut freq: HashMap<String, u32> = HashMap::new();
         let mut emoji_freq: HashMap<String, u32> = HashMap::new();
+        let mut counted_msgs = 0u32;
 
         for m in msgs.iter() {
+            if is_media_omitted_message(&m.text) {
+                continue;
+            }
+            counted_msgs += 1;
             let mut words_in_message = 0u32;
             for token in m.text.unicode_words() {
                 let cleaned = token
@@ -1104,10 +1130,10 @@ fn fun_facts(messages: &[Message]) -> Vec<FunFact> {
         }
 
         let unique_words = freq.values().filter(|v| **v == 1).count() as u32;
-        let avg_len = if msgs.is_empty() {
+        let avg_len = if counted_msgs == 0 {
             0
         } else {
-            (total_words as f64 / msgs.len() as f64).round() as u32
+            (total_words as f64 / counted_msgs as f64).round() as u32
         };
 
         let mut top_emoji_vec: Vec<_> = emoji_freq.into_iter().collect();
@@ -1141,8 +1167,13 @@ fn person_stats(messages: &[Message]) -> Vec<PersonStat> {
         let mut vocab: HashMap<String, u32> = HashMap::new();
         let mut emoji_freq: HashMap<String, u32> = HashMap::new();
         let mut color_freq: HashMap<String, u32> = HashMap::new();
+        let mut counted_msgs = 0u32;
 
         for m in &msgs {
+            if is_media_omitted_message(&m.text) {
+                continue;
+            }
+            counted_msgs += 1;
             let mut words_in_message = 0u32;
             for token in m.text.unicode_words() {
                 let cleaned = token
@@ -1167,10 +1198,10 @@ fn person_stats(messages: &[Message]) -> Vec<PersonStat> {
         }
 
         let unique_words = vocab.len() as u32;
-        let avg = if msgs.is_empty() {
+        let avg = if counted_msgs == 0 {
             0.0
         } else {
-            total_words as f32 / msgs.len() as f32
+            total_words as f32 / counted_msgs as f32
         };
 
         let mut top_emoji_vec: Vec<_> = emoji_freq.into_iter().collect();
@@ -1422,6 +1453,37 @@ mod tests {
         assert!(phrases
             .iter()
             .all(|p| !p.contains("http") && !p.contains("www")));
+    }
+
+    #[test]
+    fn media_omitted_messages_do_not_count_for_words_or_phrases() {
+        let raw = "[1/1/24, 1:00:00 PM] A: <Media omitted>\n[1/1/24, 1:01:00 PM] A: hello world again";
+        let summary = summarize(raw, 10, 5).unwrap();
+
+        let words_no_stop: Vec<&str> = summary
+            .top_words_no_stop
+            .iter()
+            .map(|c| c.label.as_str())
+            .collect();
+        assert!(words_no_stop.contains(&"hello"));
+        assert!(!words_no_stop.contains(&"media"));
+        assert!(!words_no_stop.contains(&"omitted"));
+
+        let phrases: Vec<&str> = summary
+            .top_phrases
+            .iter()
+            .map(|c| c.label.as_str())
+            .collect();
+        assert!(phrases.contains(&"hello world"));
+        assert!(!phrases.iter().any(|p| p.contains("media")));
+
+        let stats = summary
+            .person_stats
+            .iter()
+            .find(|p| p.name == "A")
+            .expect("has A");
+        assert_eq!(stats.total_words, 3);
+        assert!((stats.average_words_per_message - 3.0).abs() < f32::EPSILON);
     }
 
     #[test]
