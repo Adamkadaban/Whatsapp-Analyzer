@@ -42,7 +42,7 @@ export default function Landing() {
           </div>
           <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
             <Link className="btn" to="/dashboard">
-              View sample dashboard
+              Open your dashboard
             </Link>
             <a className="btn" href="https://github.com/Adamkadaban/WhatsappAnalyzerV2" target="_blank" rel="noreferrer" style={{ background: "rgba(255,255,255,0.06)", color: "var(--text)", boxShadow: "none" }}>
               Star on GitHub
@@ -86,7 +86,7 @@ export default function Landing() {
             Upload on the landing page, then jump to the dashboard for charts, filters, and exports. Everything stays local.
           </p>
           <Link className="btn" to="/dashboard" style={{ margin: "0 auto" }}>
-            Open sample dashboard
+            Go to dashboard
           </Link>
         </div>
       </section>
