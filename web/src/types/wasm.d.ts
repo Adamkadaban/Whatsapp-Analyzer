@@ -33,6 +33,7 @@ declare module "../../pkg/chat_core_wasm" {
     hourly: HourCount[];
     top_emojis: Count[];
     top_words: Count[];
+    top_words_no_stop: Count[];
     deleted_you: number;
     deleted_others: number;
     timeline: Count[];
@@ -41,9 +42,29 @@ declare module "../../pkg/chat_core_wasm" {
     share_of_speech: Count[];
     buckets_by_person: PersonBuckets[];
     word_cloud: Count[];
+    word_cloud_no_stop: Count[];
     emoji_cloud: Count[];
     fun_facts: FunFact[];
+    person_stats: PersonStat[];
+    per_person_daily: PersonDaily[];
+    conversation_starters: Count[];
+    conversation_count: number;
   }
+
+  export interface PersonDaily {
+    name: string;
+    daily: Count[];
+  }
+
+  export interface PersonStat {
+    name: string;
+    total_words: number;
+    unique_words: number;
+    longest_message_words: number;
+    average_words_per_message: number;
+    top_emojis: Count[];
+  }
+
 
   export function analyze_chat(raw: string, top_words_n: number, top_emojis_n: number): Summary;
   export function init_panic_hook(): void;
