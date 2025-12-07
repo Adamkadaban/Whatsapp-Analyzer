@@ -49,13 +49,38 @@ export default function Dashboard() {
   useEffect(() => {
     if (!summary) return;
     const names: string[] = summary.buckets_by_person.map((p) => p.name);
+    const preferred = new Map<string, string>();
+    summary.person_stats.forEach((p) => {
+      if (p.dominant_color) {
+        preferred.set(p.name, p.dominant_color);
+      }
+    });
+
     setColorMap((prev) => {
-      const next = { ...prev };
+      const next: Record<string, string> = {};
+      const used = new Set<string>();
+
       names.forEach((name, idx) => {
-        if (!next[name]) {
-          next[name] = colors[idx % colors.length];
+        // Keep existing manual overrides if they don't clash.
+        const existing = prev[name];
+        if (existing && !used.has(existing)) {
+          next[name] = existing;
+          used.add(existing);
+          return;
         }
+
+        const dom = preferred.get(name);
+        if (dom && !used.has(dom)) {
+          next[name] = dom;
+          used.add(dom);
+          return;
+        }
+
+        const fallback = colors.find((c) => !used.has(c)) ?? colors[idx % colors.length];
+        next[name] = fallback;
+        used.add(fallback);
       });
+
       return next;
     });
   }, [summary]);
@@ -428,7 +453,7 @@ export default function Dashboard() {
               <ChartCard title="Hourly rhythm">
                 <div style={{ height: 240 }}>
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={hourlyStacked} barGap={-3}>
+                    <BarChart data={hourlyStacked} barGap={-1}>
                       <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
                       <XAxis dataKey="hour" tickFormatter={(v) => `${v}:00`} tick={{ fill: "var(--muted)", fontSize: 12 }} axisLine={false} tickLine={false} />
                       <YAxis tick={{ fill: "var(--muted)", fontSize: 12 }} axisLine={false} tickLine={false} />

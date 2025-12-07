@@ -78,6 +78,7 @@ struct PersonStat {
     longest_message_words: u32,
     average_words_per_message: f32,
     top_emojis: Vec<Count>,
+    dominant_color: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -124,6 +125,44 @@ const WHATSAPP_EXTRAS: [&str; 27] = [
     "du",
     "wir",
 ];
+
+// Map common color words to stable hex values so we can pick a user tint from chat content.
+const COLOR_WORDS: [(&str, &str); 12] = [
+    ("blue", "#64d8ff"),
+    ("pink", "#ff7edb"),
+    ("purple", "#8c7bff"),
+    ("mint", "#7cf9c0"),
+    ("orange", "#ffb347"),
+    ("red", "#ff6b6b"),
+    ("yellow", "#ffd166"),
+    ("green", "#06d6a0"),
+    ("teal", "#118ab2"),
+    ("magenta", "#ef476f"),
+    ("gold", "#f2c94c"),
+    ("lavender", "#b39ddb"),
+];
+
+fn color_hex_for_word(word: &str) -> Option<&'static str> {
+    COLOR_WORDS
+        .iter()
+        .find(|(label, _)| *label == word)
+        .map(|(_, hex)| *hex)
+}
+
+fn pick_dominant_color(freq: &HashMap<String, u32>) -> Option<String> {
+    if freq.is_empty() {
+        return None;
+    }
+
+    let mut entries: Vec<_> = freq.iter().collect();
+    entries.sort_by(|a, b| {
+        // Higher count first; tie-break alphabetically for determinism.
+        b.1.cmp(a.1).then_with(|| a.0.cmp(b.0))
+    });
+
+    let best_word = entries.first().map(|(w, _)| w.as_str())?;
+    color_hex_for_word(best_word).map(|hex| hex.to_string())
+}
 
 fn stopwords_set() -> &'static HashSet<&'static str> {
     static STOPWORDS: OnceCell<HashSet<&'static str>> = OnceCell::new();
@@ -652,6 +691,7 @@ fn person_stats(messages: &[Message]) -> Vec<PersonStat> {
         let mut longest_message = 0u32;
         let mut vocab: HashMap<String, u32> = HashMap::new();
         let mut emoji_freq: HashMap<String, u32> = HashMap::new();
+        let mut color_freq: HashMap<String, u32> = HashMap::new();
 
         for m in &msgs {
             let mut words_in_message = 0u32;
@@ -662,7 +702,11 @@ fn person_stats(messages: &[Message]) -> Vec<PersonStat> {
                 }
                 words_in_message += 1;
                 total_words += 1;
-                *vocab.entry(cleaned).or_insert(0) += 1;
+                *vocab.entry(cleaned.clone()).or_insert(0) += 1;
+
+                if color_hex_for_word(&cleaned).is_some() {
+                    *color_freq.entry(cleaned).or_insert(0) += 1;
+                }
             }
             longest_message = longest_message.max(words_in_message);
 
@@ -686,6 +730,8 @@ fn person_stats(messages: &[Message]) -> Vec<PersonStat> {
             .map(|(label, value)| Count { label, value })
             .collect();
 
+        let dominant_color = pick_dominant_color(&color_freq);
+
         stats.push(PersonStat {
             name: name.to_string(),
             total_words,
@@ -693,6 +739,7 @@ fn person_stats(messages: &[Message]) -> Vec<PersonStat> {
             longest_message_words: longest_message,
             average_words_per_message: avg,
             top_emojis,
+            dominant_color,
         });
     }
 
@@ -792,6 +839,25 @@ mod tests {
             .expect("has em");
         assert_eq!(em.total_words, 2);
         assert!(em.top_emojis.iter().any(|e| e.label == "😀"));
+    }
+
+    #[test]
+    fn person_stats_picks_dominant_color_case_insensitive() {
+        let raw = "[8/19/19, 5:04:35 PM] Addy: BLUE blue Blue rocks\n8/19/19, 6:10 PM - Em: green vibes and more green";
+        let summary = summarize(raw, 10, 5).unwrap();
+        let addy = summary
+            .person_stats
+            .iter()
+            .find(|p| p.name == "Addy")
+            .expect("has addy");
+        let em = summary
+            .person_stats
+            .iter()
+            .find(|p| p.name == "Em")
+            .expect("has em");
+
+        assert_eq!(addy.dominant_color.as_deref(), Some("#64d8ff"));
+        assert_eq!(em.dominant_color.as_deref(), Some("#06d6a0"));
     }
 
     #[test]

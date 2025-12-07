@@ -63,6 +63,7 @@ declare module "../../pkg/chat_core_wasm" {
     longest_message_words: number;
     average_words_per_message: number;
     top_emojis: Count[];
+    dominant_color: string | null;
   }
 
 
