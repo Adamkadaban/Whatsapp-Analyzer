@@ -818,7 +818,6 @@ export default function Dashboard() {
 
         {!hasData && (
           <div id="upload" className="card" style={{ display: "grid", gap: "10px" }}>
-            <div className="tag">Upload</div>
             <h3 style={{ margin: 0 }}>Upload your chat to see insights</h3>
             <p style={{ color: "var(--muted)", margin: 0 }}>
               No uploads leave your device. Processing happens locally and privately.
