@@ -34,6 +34,10 @@ declare module "../../pkg/chat_core_wasm" {
     top_emojis: Count[];
     top_words: Count[];
     top_words_no_stop: Count[];
+    top_phrases: Count[];
+    top_phrases_no_stop: Count[];
+    per_person_phrases: PersonPhrases[];
+    per_person_phrases_no_stop: PersonPhrases[];
     deleted_you: number;
     deleted_others: number;
     timeline: Count[];
@@ -73,6 +77,11 @@ declare module "../../pkg/chat_core_wasm" {
   export interface PersonDaily {
     name: string;
     daily: Count[];
+  }
+
+  export interface PersonPhrases {
+    name: string;
+    phrases: Count[];
   }
 
   export interface PersonStat {

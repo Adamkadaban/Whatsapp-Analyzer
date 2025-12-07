@@ -159,6 +159,12 @@ export default function Dashboard() {
 
   const wordCloud = summary ? (filterStopwords ? summary.word_cloud : summary.word_cloud_no_stop) : [];
   const emojiCloud = summary?.emoji_cloud ?? [];
+  const topPhrases = summary
+    ? (filterStopwords ? summary.top_phrases : summary.top_phrases_no_stop).slice(0, 15)
+    : [];
+  const perPersonPhrases = summary
+    ? (filterStopwords ? summary.per_person_phrases : summary.per_person_phrases_no_stop)
+    : [];
 
   const sentimentByDay = summary?.sentiment_by_day ?? [];
   const sentimentOverall = summary?.sentiment_overall ?? [];
@@ -744,6 +750,58 @@ export default function Dashboard() {
             )}
 
             <div style={{ display: "grid", gap: 16 }}>
+              <div className="card" style={{ display: "grid", gap: 10 }}>
+                <div className="tag">By person</div>
+                <h3 style={{ margin: 0 }}>Top phrases per sender</h3>
+                {perPersonPhrases.length === 0 ? (
+                  <div style={{ color: "var(--muted)" }}>No phrases yet.</div>
+                ) : (
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {perPersonPhrases.map((person) => (
+                      <div
+                        key={person.name}
+                        style={{
+                          display: "grid",
+                          gap: 6,
+                          padding: "10px 12px",
+                          borderRadius: 12,
+                          background: "rgba(255,255,255,0.02)",
+                          border: "1px solid rgba(255,255,255,0.05)",
+                        }}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                          <span style={{ fontWeight: 700 }}>{person.name}</span>
+                          <span style={{ color: "var(--muted)", fontSize: 12 }}>Top {Math.min(person.phrases.length, 5)}</span>
+                        </div>
+                        {person.phrases.length === 0 ? (
+                          <span style={{ color: "var(--muted)", fontSize: 13 }}>No phrases</span>
+                        ) : (
+                          <div style={{ display: "grid", gap: 6 }}>
+                            {person.phrases.slice(0, 5).map((p, idx) => (
+                              <div
+                                key={p.label + idx}
+                                style={{
+                                  display: "grid",
+                                  gridTemplateColumns: "auto 1fr auto",
+                                  gap: 8,
+                                  padding: "6px 8px",
+                                  borderRadius: 10,
+                                  background: "rgba(255,255,255,0.02)",
+                                  border: "1px solid rgba(255,255,255,0.04)",
+                                }}
+                              >
+                                <span style={{ color: "var(--muted)", fontWeight: 600 }}>#{idx + 1}</span>
+                                <span style={{ fontWeight: 600 }}>{p.label}</span>
+                                <span style={{ textAlign: "right", color: "var(--muted)" }}>{p.value.toLocaleString()}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
               <div className="card" style={{ display: "grid", gap: 10, minHeight: 320 }}>
                 <div className="tag">Word cloud</div>
                 <h3 style={{ margin: 0 }}>Most common words</h3>
