@@ -168,12 +168,11 @@ fn sentiment_score(text: &str) -> (f32, SentimentClass) {
         }
     }
 
-    for emoji in emoji_re().find_iter(text) {
-        let glyph = emoji.as_str();
-        if POSITIVE_EMOJIS.contains(&glyph) {
+    for glyph in extract_emojis(text) {
+        if POSITIVE_EMOJIS.contains(&glyph.as_str()) {
             score += 2;
             hits += 1;
-        } else if NEGATIVE_EMOJIS.contains(&glyph) {
+        } else if NEGATIVE_EMOJIS.contains(&glyph.as_str()) {
             score -= 2;
             hits += 1;
         }
@@ -775,11 +774,30 @@ fn emoji_re() -> &'static Regex {
     })
 }
 
+fn extract_emojis(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut idx = 0;
+    while idx < text.len() {
+        let rest = &text[idx..];
+        if let Some(m) = emoji_re().find(rest) {
+            if m.start() == 0 {
+                // Greedy match at the current cursor; should cover full ZWJ/skin-tone sequence.
+                out.push(m.as_str().to_string());
+                idx += m.end();
+                continue;
+            }
+        }
+        // Advance by one scalar if no emoji match at current position.
+        idx += rest.chars().next().map(|c| c.len_utf8()).unwrap_or(1);
+    }
+    out
+}
+
 fn top_emojis(messages: &[Message], take: usize) -> Vec<Count> {
     let mut map = HashMap::new();
     for text in messages.iter().map(|m| m.text.as_str()) {
-        for hit in emoji_re().find_iter(text) {
-            *map.entry(hit.as_str().to_string()).or_insert(0u32) += 1;
+        for hit in extract_emojis(text) {
+            *map.entry(hit).or_insert(0u32) += 1;
         }
     }
     let mut items: Vec<_> = map
@@ -1080,8 +1098,8 @@ fn fun_facts(messages: &[Message]) -> Vec<FunFact> {
             }
             longest_message = longest_message.max(words_in_message);
 
-            for hit in emoji_re().find_iter(&m.text) {
-                *emoji_freq.entry(hit.as_str().to_string()).or_insert(0) += 1;
+            for hit in extract_emojis(&m.text) {
+                *emoji_freq.entry(hit).or_insert(0) += 1;
             }
         }
 
@@ -1143,8 +1161,8 @@ fn person_stats(messages: &[Message]) -> Vec<PersonStat> {
             }
             longest_message = longest_message.max(words_in_message);
 
-            for hit in emoji_re().find_iter(&m.text) {
-                *emoji_freq.entry(hit.as_str().to_string()).or_insert(0) += 1;
+            for hit in extract_emojis(&m.text) {
+                *emoji_freq.entry(hit).or_insert(0) += 1;
             }
         }
 
@@ -1232,6 +1250,15 @@ fn summarize(raw: &str, top_words_n: usize, top_emojis_n: usize) -> Result<Summa
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::NaiveDateTime;
+
+    fn msg(sender: &str, text: &str) -> Message {
+        Message {
+            dt: NaiveDateTime::parse_from_str("2020-01-01 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap(),
+            sender: sender.to_string(),
+            text: text.to_string(),
+        }
+    }
 
     fn sample_chat() -> &'static str {
         "[8/19/19, 5:04:35 PM] Addy: 😂😂 wow\n[8/19/19, 5:05:00 PM] Em: You deleted this message\n8/20/19, 7:00 AM - Addy: Another day\n8/21/19, 8:00 AM - Em: This message was deleted\n9/01/19, 9:00 AM - Addy: A fresh month"
@@ -1279,6 +1306,33 @@ mod tests {
             .expect("has em");
         assert_eq!(em.total_words, 2);
         assert!(em.top_emojis.iter().any(|e| e.label == "😀"));
+    }
+
+    #[test]
+    fn extract_preserves_compound_emoji() {
+        let input = "t🤷‍♀️";
+        let out = extract_emojis(input);
+        assert_eq!(out, vec!["🤷‍♀️"], "should keep the full ZWJ sequence");
+    }
+
+    #[test]
+    fn top_emojis_counts_full_sequence_not_components() {
+        let messages = vec![msg("a", "hello 🤷‍♀️ there"), msg("b", "another 🤷‍♀️ test")];
+        let counts = top_emojis(&messages, 10);
+        assert_eq!(counts.len(), 1);
+        assert_eq!(counts[0].label, "🤷‍♀️");
+        assert_eq!(counts[0].value, 2);
+    }
+
+    #[test]
+    fn multiple_compound_emojis_are_counted_without_components() {
+        let messages = vec![msg("a", "🤷‍♀️🤦‍♂️"), msg("b", "test 🤦‍♂️")];
+        let counts = top_emojis(&messages, 10);
+        assert_eq!(counts.len(), 2);
+        let shrug = counts.iter().find(|c| c.label == "🤷‍♀️").unwrap();
+        let facepalm = counts.iter().find(|c| c.label == "🤦‍♂️").unwrap();
+        assert_eq!(shrug.value, 1);
+        assert_eq!(facepalm.value, 2);
     }
 
     #[test]
