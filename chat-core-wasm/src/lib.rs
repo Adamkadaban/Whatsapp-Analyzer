@@ -125,7 +125,10 @@ impl SentimentAgg {
     }
 }
 
-fn sentiment_lexicons() -> (&'static HashSet<&'static str>, &'static HashSet<&'static str>) {
+fn sentiment_lexicons() -> (
+    &'static HashSet<&'static str>,
+    &'static HashSet<&'static str>,
+) {
     static POS: OnceCell<HashSet<&'static str>> = OnceCell::new();
     static NEG: OnceCell<HashSet<&'static str>> = OnceCell::new();
     let pos = POS.get_or_init(|| POSITIVE_WORDS.iter().copied().collect());
@@ -140,7 +143,9 @@ fn sentiment_score(text: &str) -> (f32, SentimentClass) {
     let mut hits: u32 = 0;
 
     for token in text.unicode_words() {
-        let cleaned = token.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase();
+        let cleaned = token
+            .trim_matches(|c: char| !c.is_alphanumeric())
+            .to_lowercase();
         if cleaned.is_empty() {
             continue;
         }
@@ -197,14 +202,12 @@ fn sentiment_breakdown(messages: &[Message]) -> (Vec<SentimentDay>, Vec<Sentimen
         let (compound, class) = sentiment_score(&m.text);
         let day = m.dt.date().format("%Y-%m-%d").to_string();
 
-        let entry = per_day
-            .entry((m.sender.clone(), day.clone()))
-            .or_insert_with(SentimentAgg::default);
+        let entry = per_day.entry((m.sender.clone(), day.clone())).or_default();
         entry.push(compound, class);
 
         per_person
             .entry(m.sender.clone())
-            .or_insert_with(SentimentAgg::default)
+            .or_default()
             .push(compound, class);
     }
 
@@ -304,46 +307,15 @@ const POSITIVE_WORDS: [&str; 37] = [
 ];
 
 const NEGATIVE_WORDS: [&str; 37] = [
-    "hate",
-    "hating",
-    "hated",
-    "bad",
-    "terrible",
-    "awful",
-    "horrible",
-    "worst",
-    "sad",
-    "angry",
-    "mad",
-    "upset",
-    "tired",
-    "annoyed",
-    "pain",
-    "hurt",
-    "broken",
-    "break",
-    "breakup",
-    "cry",
-    "crying",
-    "sucks",
-    "suck",
-    "wtf",
-    "meh",
-    "lame",
-    "loser",
-    "lost",
-    "problem",
-    "issues",
-    "issue",
-    "never",
-    "nope",
-    "cannot",
-    "can't",
-    "sorry",
-    "ugh",
+    "hate", "hating", "hated", "bad", "terrible", "awful", "horrible", "worst", "sad", "angry",
+    "mad", "upset", "tired", "annoyed", "pain", "hurt", "broken", "break", "breakup", "cry",
+    "crying", "sucks", "suck", "wtf", "meh", "lame", "loser", "lost", "problem", "issues", "issue",
+    "never", "nope", "cannot", "can't", "sorry", "ugh",
 ];
 
-const POSITIVE_EMOJIS: [&str; 12] = ["😀", "😃", "😄", "😁", "😆", "😍", "😊", "😂", "🤣", "👍", "🙏", "❤️"];
+const POSITIVE_EMOJIS: [&str; 12] = [
+    "😀", "😃", "😄", "😁", "😆", "😍", "😊", "😂", "🤣", "👍", "🙏", "❤️",
+];
 const NEGATIVE_EMOJIS: [&str; 10] = ["😢", "😭", "😡", "😠", "👎", "💔", "😞", "😔", "🙁", "☹️"];
 
 #[derive(Debug, Clone)]
@@ -426,12 +398,11 @@ fn pick_dominant_color(freq: &HashMap<String, u32>) -> Option<String> {
 fn stopwords_set() -> &'static HashSet<&'static str> {
     static STOPWORDS: OnceCell<HashSet<&'static str>> = OnceCell::new();
     STOPWORDS.get_or_init(|| {
-        let mut set: HashSet<&'static str> =
-            Spark::stopwords(Language::English)
-                .unwrap_or_default()
-                .iter()
-                .copied()
-                .collect();
+        let mut set: HashSet<&'static str> = Spark::stopwords(Language::English)
+            .unwrap_or_default()
+            .iter()
+            .copied()
+            .collect();
         for extra in WHATSAPP_EXTRAS {
             set.insert(extra);
         }
@@ -443,7 +414,10 @@ fn conversation_initiations(messages: &[Message]) -> (Vec<Count>, usize) {
     conversation_initiations_with_gap(messages, CONVERSATION_GAP_MINUTES)
 }
 
-fn conversation_initiations_with_gap(messages: &[Message], gap_minutes: i64) -> (Vec<Count>, usize) {
+fn conversation_initiations_with_gap(
+    messages: &[Message],
+    gap_minutes: i64,
+) -> (Vec<Count>, usize) {
     if messages.is_empty() {
         return (Vec::new(), 0);
     }
@@ -481,8 +455,6 @@ fn conversation_initiations_with_gap(messages: &[Message], gap_minutes: i64) -> 
     (items, conversation_count)
 }
 
-
-
 fn re_bracket() -> &'static Regex {
     static RE: OnceCell<Regex> = OnceCell::new();
     RE.get_or_init(|| {
@@ -501,8 +473,7 @@ fn re_hyphen() -> &'static Regex {
 
 fn parse_timestamp(date: &str, time: &str) -> Option<NaiveDateTime> {
     let cleaned = time
-        .replace('\u{202f}', " ")
-        .replace('\u{00a0}', " ")
+        .replace(['\u{202f}', '\u{00a0}'], " ")
         .trim()
         .to_uppercase();
 
@@ -525,20 +496,68 @@ fn parse_timestamp(date: &str, time: &str) -> Option<NaiveDateTime> {
 
     // Build format list in the preferred order to reduce ambiguous swaps.
     if date.contains('.') {
-        formats.extend_from_slice(&["%d.%m.%Y, %H:%M:%S", "%d.%m.%Y, %H:%M", "%d.%m.%y, %H:%M:%S", "%d.%m.%y, %H:%M"]);
-        formats.extend_from_slice(&["%d.%m.%Y, %I:%M:%S %p", "%d.%m.%Y, %I:%M %p", "%d.%m.%y, %I:%M:%S %p", "%d.%m.%y, %I:%M %p"]);
+        formats.extend_from_slice(&[
+            "%d.%m.%Y, %H:%M:%S",
+            "%d.%m.%Y, %H:%M",
+            "%d.%m.%y, %H:%M:%S",
+            "%d.%m.%y, %H:%M",
+        ]);
+        formats.extend_from_slice(&[
+            "%d.%m.%Y, %I:%M:%S %p",
+            "%d.%m.%Y, %I:%M %p",
+            "%d.%m.%y, %I:%M:%S %p",
+            "%d.%m.%y, %I:%M %p",
+        ]);
+    } else if prefer_month_first {
+        formats.extend_from_slice(&[
+            "%m/%d/%Y, %H:%M:%S",
+            "%m/%d/%Y, %H:%M",
+            "%m/%d/%y, %H:%M:%S",
+            "%m/%d/%y, %H:%M",
+        ]);
+        formats.extend_from_slice(&[
+            "%d/%m/%Y, %H:%M:%S",
+            "%d/%m/%Y, %H:%M",
+            "%d/%m/%y, %H:%M:%S",
+            "%d/%m/%y, %H:%M",
+        ]);
+        formats.extend_from_slice(&[
+            "%m/%d/%Y, %I:%M:%S %p",
+            "%m/%d/%Y, %I:%M %p",
+            "%m/%d/%y, %I:%M:%S %p",
+            "%m/%d/%y, %I:%M %p",
+        ]);
+        formats.extend_from_slice(&[
+            "%d/%m/%Y, %I:%M:%S %p",
+            "%d/%m/%Y, %I:%M %p",
+            "%d/%m/%y, %I:%M:%S %p",
+            "%d/%m/%y, %I:%M %p",
+        ]);
     } else {
-        if prefer_month_first {
-            formats.extend_from_slice(&["%m/%d/%Y, %H:%M:%S", "%m/%d/%Y, %H:%M", "%m/%d/%y, %H:%M:%S", "%m/%d/%y, %H:%M"]);
-            formats.extend_from_slice(&["%d/%m/%Y, %H:%M:%S", "%d/%m/%Y, %H:%M", "%d/%m/%y, %H:%M:%S", "%d/%m/%y, %H:%M"]);
-            formats.extend_from_slice(&["%m/%d/%Y, %I:%M:%S %p", "%m/%d/%Y, %I:%M %p", "%m/%d/%y, %I:%M:%S %p", "%m/%d/%y, %I:%M %p"]);
-            formats.extend_from_slice(&["%d/%m/%Y, %I:%M:%S %p", "%d/%m/%Y, %I:%M %p", "%d/%m/%y, %I:%M:%S %p", "%d/%m/%y, %I:%M %p"]);
-        } else {
-            formats.extend_from_slice(&["%d/%m/%Y, %H:%M:%S", "%d/%m/%Y, %H:%M", "%d/%m/%y, %H:%M:%S", "%d/%m/%y, %H:%M"]);
-            formats.extend_from_slice(&["%m/%d/%Y, %H:%M:%S", "%m/%d/%Y, %H:%M", "%m/%d/%y, %H:%M:%S", "%m/%d/%y, %H:%M"]);
-            formats.extend_from_slice(&["%d/%m/%Y, %I:%M:%S %p", "%d/%m/%Y, %I:%M %p", "%d/%m/%y, %I:%M:%S %p", "%d/%m/%y, %I:%M %p"]);
-            formats.extend_from_slice(&["%m/%d/%Y, %I:%M:%S %p", "%m/%d/%Y, %I:%M %p", "%m/%d/%y, %I:%M:%S %p", "%m/%d/%y, %I:%M %p"]);
-        }
+        formats.extend_from_slice(&[
+            "%d/%m/%Y, %H:%M:%S",
+            "%d/%m/%Y, %H:%M",
+            "%d/%m/%y, %H:%M:%S",
+            "%d/%m/%y, %H:%M",
+        ]);
+        formats.extend_from_slice(&[
+            "%m/%d/%Y, %H:%M:%S",
+            "%m/%d/%Y, %H:%M",
+            "%m/%d/%y, %H:%M:%S",
+            "%m/%d/%y, %H:%M",
+        ]);
+        formats.extend_from_slice(&[
+            "%d/%m/%Y, %I:%M:%S %p",
+            "%d/%m/%Y, %I:%M %p",
+            "%d/%m/%y, %I:%M:%S %p",
+            "%d/%m/%y, %I:%M %p",
+        ]);
+        formats.extend_from_slice(&[
+            "%m/%d/%Y, %I:%M:%S %p",
+            "%m/%d/%Y, %I:%M %p",
+            "%m/%d/%y, %I:%M:%S %p",
+            "%m/%d/%y, %I:%M %p",
+        ]);
     }
 
     formats.iter().find_map(|fmt| {
@@ -555,29 +574,28 @@ fn parse_timestamp(date: &str, time: &str) -> Option<NaiveDateTime> {
 }
 
 fn clean_sender(name: &str) -> String {
-    name
-        .trim_matches(|c: char| {
-            c.is_whitespace() || matches!(c, '\u{feff}' | '\u{200e}' | '\u{200f}')
-        })
-        .chars()
-        .filter(|c| {
-            !c.is_control()
-                && !matches!(
-                    *c,
-                    '\u{202a}'
-                        | '\u{202b}'
-                        | '\u{202c}'
-                        | '\u{202d}'
-                        | '\u{202e}'
-                        | '\u{202f}'
-                        | '\u{2060}'
-                        | '\u{2066}'
-                        | '\u{2067}'
-                        | '\u{2068}'
-                        | '\u{2069}'
-                )
-        })
-        .collect()
+    name.trim_matches(|c: char| {
+        c.is_whitespace() || matches!(c, '\u{feff}' | '\u{200e}' | '\u{200f}')
+    })
+    .chars()
+    .filter(|c| {
+        !c.is_control()
+            && !matches!(
+                *c,
+                '\u{202a}'
+                    | '\u{202b}'
+                    | '\u{202c}'
+                    | '\u{202d}'
+                    | '\u{202e}'
+                    | '\u{202f}'
+                    | '\u{2060}'
+                    | '\u{2066}'
+                    | '\u{2067}'
+                    | '\u{2068}'
+                    | '\u{2069}'
+            )
+    })
+    .collect()
 }
 
 fn parse_messages(raw: &str) -> Vec<Message> {
@@ -585,7 +603,10 @@ fn parse_messages(raw: &str) -> Vec<Message> {
     let mut current: Option<Message> = None;
 
     for line in raw.lines() {
-        if let Some(caps) = re_bracket().captures(line).or_else(|| re_hyphen().captures(line)) {
+        if let Some(caps) = re_bracket()
+            .captures(line)
+            .or_else(|| re_hyphen().captures(line))
+        {
             if let Some(msg) = current.take() {
                 messages.push(msg);
             }
@@ -596,10 +617,18 @@ fn parse_messages(raw: &str) -> Vec<Message> {
                 .name("name")
                 .map(|m| clean_sender(m.as_str()))
                 .unwrap_or_else(String::new);
-            let text = caps.name("msg").map(|m| m.as_str()).unwrap_or("").to_string();
+            let text = caps
+                .name("msg")
+                .map(|m| m.as_str())
+                .unwrap_or("")
+                .to_string();
 
             if let Some(dt) = parse_timestamp(date, time) {
-                current = Some(Message { dt, sender: name, text });
+                current = Some(Message {
+                    dt,
+                    sender: name,
+                    text,
+                });
             }
         } else if let Some(msg) = current.as_mut() {
             msg.text.push('\n');
@@ -758,7 +787,9 @@ fn top_words(messages: &[Message], take: usize, filter_stop: bool) -> Vec<Count>
     let mut map = HashMap::new();
     for text in messages.iter().map(|m| m.text.as_str()) {
         for token in text.unicode_words() {
-            let cleaned = token.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase();
+            let cleaned = token
+                .trim_matches(|c: char| !c.is_alphanumeric())
+                .to_lowercase();
             if cleaned.len() < 3 {
                 continue;
             }
@@ -782,7 +813,9 @@ fn word_cloud(messages: &[Message], take: usize, filter_stop: bool) -> Vec<Count
     let mut map = HashMap::new();
     for text in messages.iter().map(|m| m.text.as_str()) {
         for token in text.unicode_words() {
-            let cleaned = token.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase();
+            let cleaned = token
+                .trim_matches(|c: char| !c.is_alphanumeric())
+                .to_lowercase();
             if cleaned.is_empty() {
                 continue;
             }
@@ -944,7 +977,9 @@ fn fun_facts(messages: &[Message]) -> Vec<FunFact> {
         for m in msgs.iter() {
             let mut words_in_message = 0u32;
             for token in m.text.unicode_words() {
-                let cleaned = token.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase();
+                let cleaned = token
+                    .trim_matches(|c: char| !c.is_alphanumeric())
+                    .to_lowercase();
                 if cleaned.is_empty() {
                     continue;
                 }
@@ -1001,7 +1036,9 @@ fn person_stats(messages: &[Message]) -> Vec<PersonStat> {
         for m in &msgs {
             let mut words_in_message = 0u32;
             for token in m.text.unicode_words() {
-                let cleaned = token.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase();
+                let cleaned = token
+                    .trim_matches(|c: char| !c.is_alphanumeric())
+                    .to_lowercase();
                 if cleaned.is_empty() {
                     continue;
                 }
@@ -1074,9 +1111,9 @@ fn summarize(raw: &str, top_words_n: usize, top_emojis_n: usize) -> Result<Summa
         by_sender: count_by_sender(&messages),
         daily: daily_counts(&messages),
         hourly: hourly_counts(&messages),
-        top_emojis: top_emojis(&messages, top_emojis_n as usize),
-        top_words: top_words(&messages, top_words_n as usize, true),
-        top_words_no_stop: top_words(&messages, top_words_n as usize, false),
+        top_emojis: top_emojis(&messages, top_emojis_n),
+        top_words: top_words(&messages, top_words_n, true),
+        top_words_no_stop: top_words(&messages, top_words_n, false),
         deleted_you: del_you,
         deleted_others: del_others,
         timeline: timeline(&messages),
@@ -1228,7 +1265,8 @@ mod tests {
 
     #[test]
     fn buckets_cover_hour_day_month() {
-        let raw = "[1/1/24, 1:00:00 AM] A: hi\n[1/1/24, 1:00:00 PM] B: hey\n[2/2/24, 1:00:00 AM] A: yo";
+        let raw =
+            "[1/1/24, 1:00:00 AM] A: hi\n[1/1/24, 1:00:00 PM] B: hey\n[2/2/24, 1:00:00 AM] A: yo";
         let summary = summarize(raw, 5, 5).unwrap();
         let a = summary
             .buckets_by_person
@@ -1244,9 +1282,14 @@ mod tests {
 
     #[test]
     fn stopwords_and_extras_filtered_from_word_cloud() {
-        let raw = "[8/19/19, 5:00:00 PM] A: the and omitted> hello world\n[8/19/19, 5:01:00 PM] A: hello";
+        let raw =
+            "[8/19/19, 5:00:00 PM] A: the and omitted> hello world\n[8/19/19, 5:01:00 PM] A: hello";
         let summary = summarize(raw, 10, 5).unwrap();
-        let words = summary.word_cloud.iter().map(|c| c.label.as_str()).collect::<Vec<_>>();
+        let words = summary
+            .word_cloud
+            .iter()
+            .map(|c| c.label.as_str())
+            .collect::<Vec<_>>();
         assert!(words.contains(&"hello"));
         assert!(!words.contains(&"the"));
         assert!(!words.contains(&"omitted"));
@@ -1267,7 +1310,8 @@ mod tests {
 
     #[test]
     fn sentiment_is_computed() {
-        let raw = "[8/19/19, 5:04:35 PM] Addy: I love this!\n8/20/19, 7:00 AM - Em: this is terrible";
+        let raw =
+            "[8/19/19, 5:04:35 PM] Addy: I love this!\n8/20/19, 7:00 AM - Em: this is terrible";
         let summary = summarize(raw, 5, 5).unwrap();
         assert!(!summary.sentiment_by_day.is_empty());
         assert!(!summary.sentiment_overall.is_empty());
