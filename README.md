@@ -1,10 +1,10 @@
 # WhatsApp Analyzer V2
 
-Client-side WhatsApp chat analytics powered by Rust + Polars compiled to WASM and a React/Vite UI. Everything runs locally in the browser—no uploads.
+Client-side WhatsApp chat analytics with a React/Vite UI. Everything runs locally in the browser—no uploads.
 
 ## Features
-- Local-only parsing and analytics (Polars WASM)
-- Web Worker bridge keeps the UI responsive on large exports
+- Local-only parsing and analytics (stays on your device)
+- Responsive UI on large exports
 - Rich visuals: timeline, hourly rhythm, per-person stats, emoji/word clouds, radar footprints
 - Export options: CSV/JSON aggregates, PDF snapshot (client-side)
 - GitHub Pages deployment with custom domain `wa.hackback.zip`

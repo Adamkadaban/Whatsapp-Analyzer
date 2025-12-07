@@ -37,6 +37,12 @@ a {
   flex-direction: column;
 }
 
+.page {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
 section {
   width: 100%;
   padding: 72px 20px;
@@ -151,10 +157,10 @@ section {
 }
 
 .footer {
-  padding: 32px 20px 48px;
+  padding: 16px 20px;
   color: var(--muted);
   font-size: 14px;
-  background: rgba(0, 0, 0, 0.3);
+  background: rgba(0, 0, 0, 0.25);
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 

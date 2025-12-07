@@ -10,7 +10,7 @@ export default function Navbar() {
   return (
     <header className="navbar">
       <Link to="/" className="logo">
-        <span style={{ color: "var(--primary)" }}>WA</span> Analyzer
+        <span style={{ color: "#25d366" }}>WA</span> Analyzer
       </Link>
       <nav style={{ display: "flex", gap: "14px", alignItems: "center" }}>
         {links.map((link) => {
@@ -32,14 +32,6 @@ export default function Navbar() {
             </Link>
           );
         })}
-        <a
-          className="btn"
-          href="https://github.com/Adamkadaban/WhatsappAnalyzerV2"
-          target="_blank"
-          rel="noreferrer"
-        >
-          View Source
-        </a>
       </nav>
     </header>
   );

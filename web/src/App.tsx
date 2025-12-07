@@ -8,10 +8,12 @@ export default function App() {
   return (
     <div className="app-shell">
       <Navbar />
-      <Routes>
-        <Route path="/" element={<Landing />} />
-        <Route path="/dashboard" element={<Dashboard />} />
-      </Routes>
+      <div className="page">
+        <Routes>
+          <Route path="/" element={<Landing />} />
+          <Route path="/dashboard" element={<Dashboard />} />
+        </Routes>
+      </div>
       <Footer />
     </div>
   );

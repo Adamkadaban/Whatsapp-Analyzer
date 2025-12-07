@@ -283,13 +283,13 @@ export default function Dashboard() {
       <section className="container" style={{ display: "grid", gap: "24px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: "16px", alignItems: "center", flexWrap: "wrap" }}>
           <div>
-            <div className="tag">Local-only</div>
             <h2 style={{ margin: "8px 0" }}>Dashboard</h2>
-            <p style={{ color: "var(--muted)", margin: 0 }}>
-              Drop your exported WhatsApp .txt — parsing and stats run fully in-browser via Rust+Polars WASM.
-            </p>
+            {!hasData && (
+              <p style={{ color: "var(--muted)", margin: 0 }}>
+                Drop your exported WhatsApp .txt.
+              </p>
+            )}
           </div>
-          {!hasData && <a className="btn" href="#upload">Upload chat</a>}
           {hasData && (
             <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
               <div className="switch-row">
@@ -530,9 +530,9 @@ export default function Dashboard() {
         {!hasData && (
           <div id="upload" className="card" style={{ display: "grid", gap: "10px" }}>
             <div className="tag">Upload</div>
-            <h3 style={{ margin: 0 }}>Drive these charts with your chat</h3>
+            <h3 style={{ margin: 0 }}>Upload your chat to see insights</h3>
             <p style={{ color: "var(--muted)", margin: 0 }}>
-              No uploads leave your device. We parse locally in a WebAssembly module backed by Polars.
+              No uploads leave your device. Processing happens locally and privately.
             </p>
             <div style={{ display: "grid", gap: 12 }}>
               <div
@@ -553,7 +553,17 @@ export default function Dashboard() {
                 }}
               >
                 <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-                  <label className="btn" style={{ cursor: "pointer" }}>
+                  <label
+                    className="btn"
+                    style={{
+                      cursor: "pointer",
+                      background: "rgba(100, 216, 255, 0.18)",
+                      color: "white",
+                      boxShadow: "0 8px 24px rgba(100, 216, 255, 0.25)",
+                      border: "1px solid rgba(100, 216, 255, 0.35)",
+                      fontWeight: 700,
+                    }}
+                  >
                     Choose .txt export
                     <input type="file" accept="text/plain,.txt" style={{ display: "none" }} onChange={onFileChange} />
                   </label>
