@@ -52,8 +52,9 @@ export default function EmojiCloud({
     const min = Math.min(...filtered.map((w) => w.value));
     const scale = (v: number) => {
       if (max === min) return 36;
-      const t = (v - min) / (max - min);
-      return 24 + t * 56; // Larger range: 24-80px
+      // sqrt easing keeps large differences visible without dwarfing smaller emojis.
+      const t = Math.sqrt((v - min) / (max - min));
+      return 20 + t * 60; // 20–80px range, proportional to usage
     };
 
     const wordsForLayout = filtered.map((w, idx) => ({
@@ -86,7 +87,7 @@ export default function EmojiCloud({
             <text
               key={`${w.text}-${idx}`}
               textAnchor="middle"
-              transform={`translate(${w.x}, ${w.y})`}
+              transform={`translate(${w.x}, ${w.y}) rotate(${(w as cloud.Word & { rotate?: number }).rotate ?? 0})`}
               fontFamily={FONT_FAMILY}
               fontSize={w.size}
               fill={colors[((w as cloud.Word & { index?: number }).index ?? idx) % colors.length]}

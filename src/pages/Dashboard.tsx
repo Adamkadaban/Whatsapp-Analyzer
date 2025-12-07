@@ -221,7 +221,8 @@ export default function Dashboard() {
   const [fileCount, setFileCount] = useState(0);
   const [analyzing, setAnalyzing] = useState(false);
 
-  const stripInvisibles = (text: string) => text.replace(/[\u200b-\u200f\u202a-\u202e\u2060-\u2063\ufeff]/g, "");
+  // Preserve ZWJ (\u200d) so compound emoji sequences stay intact. Strip other common invisibles.
+  const stripInvisibles = (text: string) => text.replace(/[\u200b-\u200c\u200e-\u200f\u202a-\u202e\u2060-\u2063\ufeff]/g, "");
 
   const hasMeaningfulText = (text: string) => {
     if (!text) return false;
