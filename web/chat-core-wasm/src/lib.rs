@@ -1,0 +1,710 @@
+use chrono::{Datelike, NaiveDate, NaiveDateTime, Timelike, Weekday};
+use once_cell::sync::OnceCell;
+use regex::Regex;
+use serde::Serialize;
+use std::collections::{BTreeMap, HashMap, HashSet};
+use unicode_segmentation::UnicodeSegmentation;
+use wasm_bindgen::prelude::*;
+
+#[wasm_bindgen]
+pub fn init_panic_hook() {
+    #[cfg(feature = "console_error_panic_hook")]
+    console_error_panic_hook::set_once();
+}
+
+#[derive(Debug, Serialize)]
+struct Count {
+    label: String,
+    value: u32,
+}
+
+#[derive(Debug, Serialize)]
+struct HourCount {
+    hour: u32,
+    value: u32,
+}
+
+#[derive(Debug, Serialize)]
+struct Summary {
+    total_messages: usize,
+    by_sender: Vec<Count>,
+    daily: Vec<Count>,
+    hourly: Vec<HourCount>,
+    top_emojis: Vec<Count>,
+    top_words: Vec<Count>,
+    top_words_no_stop: Vec<Count>,
+    deleted_you: u32,
+    deleted_others: u32,
+    timeline: Vec<Count>,
+    weekly: Vec<Count>,
+    monthly: Vec<Count>,
+    share_of_speech: Vec<Count>,
+    buckets_by_person: Vec<PersonBuckets>,
+    word_cloud: Vec<Count>,
+    word_cloud_no_stop: Vec<Count>,
+    emoji_cloud: Vec<Count>,
+    fun_facts: Vec<FunFact>,
+    person_stats: Vec<PersonStat>,
+    per_person_daily: Vec<PersonDaily>,
+}
+
+#[derive(Debug, Serialize)]
+struct PersonBuckets {
+    name: String,
+    messages: usize,
+    hourly: [u32; 24],
+    daily: [u32; 7],
+    monthly: [u32; 12],
+}
+
+#[derive(Debug, Serialize)]
+struct FunFact {
+    name: String,
+    total_words: u32,
+    longest_message_words: u32,
+    unique_words: u32,
+    average_message_length: u32,
+    top_emojis: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct PersonStat {
+    name: String,
+    total_words: u32,
+    unique_words: u32,
+    longest_message_words: u32,
+    average_words_per_message: f32,
+    top_emojis: Vec<Count>,
+}
+
+#[derive(Debug, Serialize)]
+struct PersonDaily {
+    name: String,
+    daily: Vec<Count>,
+}
+
+#[derive(Debug, Clone)]
+struct Message {
+    dt: NaiveDateTime,
+    sender: String,
+    text: String,
+}
+
+fn re_bracket() -> &'static Regex {
+    static RE: OnceCell<Regex> = OnceCell::new();
+    RE.get_or_init(|| {
+        Regex::new(r"^[\u{feff}\u{200e}]?\[(?P<date>\d{1,2}/\d{1,2}/\d{2}),\s+(?P<time>[^\]]+)\]\s+(?P<name>[^:]+):\s+(?P<msg>.*)$")
+            .expect("valid regex")
+    })
+}
+
+fn re_hyphen() -> &'static Regex {
+    static RE: OnceCell<Regex> = OnceCell::new();
+    RE.get_or_init(|| {
+        Regex::new(r"^(?P<date>\d{1,2}/\d{1,2}/\d{2}),\s+(?P<time>\d{1,2}:\d{2}(?::\d{2})?\s*[AP]M)\s+-\s+(?P<name>[^:]+):\s+(?P<msg>.*)$")
+            .expect("valid regex")
+    })
+}
+
+fn parse_timestamp(date: &str, time: &str) -> Option<NaiveDateTime> {
+    let cleaned = time.replace('\u{202f}', " ").replace('\u{00a0}', " ");
+    let t = cleaned.trim();
+    let candidates = ["%m/%d/%y, %I:%M:%S %p", "%m/%d/%y, %I:%M %p"];
+    candidates
+        .iter()
+        .find_map(|fmt| NaiveDateTime::parse_from_str(&format!("{date}, {t}"), fmt).ok())
+}
+
+fn clean_sender(name: &str) -> String {
+    name
+        .trim_matches(|c: char| {
+            c.is_whitespace() || matches!(c, '\u{feff}' | '\u{200e}' | '\u{200f}')
+        })
+        .chars()
+        .filter(|c| {
+            !c.is_control()
+                && !matches!(
+                    *c,
+                    '\u{202a}'
+                        | '\u{202b}'
+                        | '\u{202c}'
+                        | '\u{202d}'
+                        | '\u{202e}'
+                        | '\u{202f}'
+                        | '\u{2060}'
+                        | '\u{2066}'
+                        | '\u{2067}'
+                        | '\u{2068}'
+                        | '\u{2069}'
+                )
+        })
+        .collect()
+}
+
+fn parse_messages(raw: &str) -> Vec<Message> {
+    let mut messages = Vec::new();
+    let mut current: Option<Message> = None;
+
+    for line in raw.lines() {
+        if let Some(caps) = re_bracket().captures(line).or_else(|| re_hyphen().captures(line)) {
+            if let Some(msg) = current.take() {
+                messages.push(msg);
+            }
+
+            let date = caps.name("date").map(|m| m.as_str()).unwrap_or("");
+            let time = caps.name("time").map(|m| m.as_str()).unwrap_or("");
+            let name = caps
+                .name("name")
+                .map(|m| clean_sender(m.as_str()))
+                .unwrap_or_else(String::new);
+            let text = caps.name("msg").map(|m| m.as_str()).unwrap_or("").to_string();
+
+            if let Some(dt) = parse_timestamp(date, time) {
+                current = Some(Message { dt, sender: name, text });
+            }
+        } else if let Some(msg) = current.as_mut() {
+            msg.text.push('\n');
+            msg.text.push_str(line.trim());
+        }
+    }
+
+    if let Some(msg) = current.take() {
+        messages.push(msg);
+    }
+
+    filter_system_messages(messages)
+}
+
+fn filter_system_messages(messages: Vec<Message>) -> Vec<Message> {
+    let mut filtered = Vec::with_capacity(messages.len());
+    let mut iter = messages.into_iter();
+
+    if let Some(first) = iter.next() {
+        if !is_system_message(&first) {
+            filtered.push(first);
+        }
+    }
+
+    for msg in iter {
+        if !is_system_message(&msg) {
+            filtered.push(msg);
+        }
+    }
+    filtered
+}
+
+fn is_system_message(msg: &Message) -> bool {
+    let sender = msg.sender.to_lowercase();
+    sender == "system"
+        || msg
+            .text
+            .contains("Messages and calls are end-to-end encrypted")
+}
+
+fn count_by_sender(messages: &[Message]) -> Vec<Count> {
+    let mut map = HashMap::new();
+    for m in messages {
+        *map.entry(m.sender.clone()).or_insert(0u32) += 1;
+    }
+    let mut items: Vec<_> = map
+        .into_iter()
+        .map(|(label, value)| Count { label, value })
+        .collect();
+    items.sort_by_key(|c| std::cmp::Reverse(c.value));
+    items
+}
+
+fn daily_counts(messages: &[Message]) -> Vec<Count> {
+    let mut map = BTreeMap::new();
+    for m in messages {
+        let date: NaiveDate = m.dt.date();
+        *map.entry(date).or_insert(0u32) += 1;
+    }
+    map.into_iter()
+        .map(|(d, value)| Count {
+            label: d.format("%Y-%m-%d").to_string(),
+            value,
+        })
+        .collect()
+}
+
+fn hourly_counts(messages: &[Message]) -> Vec<HourCount> {
+    let mut map = [0u32; 24];
+    for m in messages {
+        let h = m.dt.hour() as usize;
+        if h < 24 {
+            map[h] += 1;
+        }
+    }
+    map.iter()
+        .enumerate()
+        .map(|(hour, value)| HourCount {
+            hour: hour as u32,
+            value: *value,
+        })
+        .collect()
+}
+
+fn weekly_counts(messages: &[Message]) -> Vec<Count> {
+    let mut map = [0u32; 7];
+    for m in messages {
+        let idx = weekday_index(m.dt.weekday());
+        map[idx] += 1;
+    }
+    map.iter()
+        .enumerate()
+        .map(|(i, value)| Count {
+            label: weekday_label(i),
+            value: *value,
+        })
+        .collect()
+}
+
+fn monthly_counts(messages: &[Message]) -> Vec<Count> {
+    let mut map: BTreeMap<String, u32> = BTreeMap::new();
+    for m in messages {
+        let label = format!("{:04}-{:02}", m.dt.year(), m.dt.month());
+        *map.entry(label).or_insert(0) += 1;
+    }
+    map.into_iter()
+        .map(|(label, value)| Count { label, value })
+        .collect()
+}
+
+fn emoji_re() -> &'static Regex {
+    static RE: OnceCell<Regex> = OnceCell::new();
+    RE.get_or_init(|| {
+        Regex::new(r"([\u{1F1E6}-\u{1F1FF}]{2}|[\u{1F300}-\u{1FAFF}]|[\u{2600}-\u{27BF}])")
+            .expect("emoji regex")
+    })
+}
+
+fn top_emojis(messages: &[Message], take: usize) -> Vec<Count> {
+    let mut map = HashMap::new();
+    for text in messages.iter().map(|m| m.text.as_str()) {
+        for hit in emoji_re().find_iter(text) {
+            *map.entry(hit.as_str().to_string()).or_insert(0u32) += 1;
+        }
+    }
+    let mut items: Vec<_> = map
+        .into_iter()
+        .map(|(label, value)| Count { label, value })
+        .collect();
+    items.sort_by_key(|c| std::cmp::Reverse(c.value));
+    items.truncate(take);
+    items
+}
+
+fn top_words(messages: &[Message], take: usize, filter_stop: bool) -> Vec<Count> {
+    let stop = stopwords();
+
+    let mut map = HashMap::new();
+    for text in messages.iter().map(|m| m.text.as_str()) {
+        for token in text.unicode_words() {
+            let cleaned = token.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase();
+            if cleaned.len() < 3 {
+                continue;
+            }
+            if filter_stop && stop.contains(cleaned.as_str()) {
+                continue;
+            }
+            *map.entry(cleaned).or_insert(0u32) += 1;
+        }
+    }
+    let mut items: Vec<_> = map
+        .into_iter()
+        .map(|(label, value)| Count { label, value })
+        .collect();
+    items.sort_by_key(|c| std::cmp::Reverse(c.value));
+    items.truncate(take);
+    items
+}
+
+fn word_cloud(messages: &[Message], take: usize, filter_stop: bool) -> Vec<Count> {
+    let stop = stopwords();
+    let mut map = HashMap::new();
+    for text in messages.iter().map(|m| m.text.as_str()) {
+        for token in text.unicode_words() {
+            let cleaned = token.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase();
+            if cleaned.is_empty() {
+                continue;
+            }
+            if filter_stop && stop.contains(cleaned.as_str()) {
+                continue;
+            }
+            *map.entry(cleaned).or_insert(0u32) += 1;
+        }
+    }
+    let mut items: Vec<_> = map
+        .into_iter()
+        .map(|(label, value)| Count { label, value })
+        .collect();
+    items.sort_by_key(|c| std::cmp::Reverse(c.value));
+    items.truncate(take);
+    items
+}
+
+fn emoji_cloud(messages: &[Message], take: usize) -> Vec<Count> {
+    let mut counts = top_emojis(messages, usize::MAX);
+    counts.truncate(take);
+    counts
+}
+
+fn stopwords() -> HashSet<&'static str> {
+    [
+        "the", "and", "of", "to", "in", "a", "is", "it", "i", "you", "for", "on", "that",
+        "this", "was", "with", "at", "be", "are", "my", "me", "we", "they", "them", "your",
+        "ich", "du", "wir", "aber", "<media", "<attached:", "audio", "omitted>", "bild", "image",
+        "<medien", "ausgeschlossen>", "weggelassen", "omitted", "_", "_weggelassen>", "_ommited>",
+        "_omesso>", "_omitted", "_attached", "edited>", "<this", "message", "missed", "voice",
+        "call.", "location:", "deleted",
+    ]
+    .into_iter()
+    .collect()
+}
+
+fn deleted_counts(messages: &[Message]) -> (u32, u32) {
+    let mut you = 0u32;
+    let mut others = 0u32;
+    for text in messages.iter().map(|m| m.text.as_str()) {
+        if text == "You deleted this message" {
+            you += 1;
+        } else if text == "This message was deleted" {
+            others += 1;
+        }
+    }
+    (you, others)
+}
+
+fn timeline(messages: &[Message]) -> Vec<Count> {
+    if messages.is_empty() {
+        return Vec::new();
+    }
+    let mut sorted = messages.to_vec();
+    sorted.sort_by_key(|m| m.dt);
+    let start = sorted.first().unwrap().dt.date();
+    let end = sorted.last().unwrap().dt.date();
+
+    let mut map = BTreeMap::new();
+    let mut cursor = start;
+    while cursor <= end {
+        map.insert(cursor, 0u32);
+        cursor = cursor.succ_opt().unwrap();
+    }
+    for m in sorted {
+        let d = m.dt.date();
+        if let Some(v) = map.get_mut(&d) {
+            *v += 1;
+        }
+    }
+    map.into_iter()
+        .map(|(d, value)| Count {
+            label: d.format("%Y-%m-%d").to_string(),
+            value,
+        })
+        .collect()
+}
+
+fn weekday_index(wd: Weekday) -> usize {
+    wd.num_days_from_sunday() as usize
+}
+
+fn weekday_label(idx: usize) -> String {
+    match idx {
+        0 => "Sun",
+        1 => "Mon",
+        2 => "Tue",
+        3 => "Wed",
+        4 => "Thu",
+        5 => "Fri",
+        6 => "Sat",
+        _ => "?",
+    }
+    .to_string()
+}
+
+fn buckets_by_person(messages: &[Message]) -> Vec<PersonBuckets> {
+    let mut grouped: HashMap<&str, Vec<&Message>> = HashMap::new();
+    for m in messages {
+        grouped.entry(m.sender.as_str()).or_default().push(m);
+    }
+
+    let mut buckets = Vec::with_capacity(grouped.len());
+    for (name, msgs) in grouped.into_iter() {
+        let mut hourly = [0u32; 24];
+        let mut daily = [0u32; 7];
+        let mut monthly = [0u32; 12];
+
+        for m in &msgs {
+            hourly[m.dt.hour() as usize] += 1;
+            daily[weekday_index(m.dt.weekday())] += 1;
+            monthly[(m.dt.month0()) as usize] += 1;
+        }
+
+        buckets.push(PersonBuckets {
+            name: name.to_string(),
+            messages: msgs.len(),
+            hourly,
+            daily,
+            monthly,
+        });
+    }
+
+    buckets.sort_by_key(|b| std::cmp::Reverse(b.messages as u32));
+    buckets
+}
+
+fn per_person_daily(messages: &[Message]) -> Vec<PersonDaily> {
+    let mut grouped: HashMap<&str, BTreeMap<NaiveDate, u32>> = HashMap::new();
+    for m in messages {
+        grouped
+            .entry(m.sender.as_str())
+            .or_default()
+            .entry(m.dt.date())
+            .and_modify(|v| *v += 1)
+            .or_insert(1);
+    }
+
+    let mut result = Vec::with_capacity(grouped.len());
+    for (name, map) in grouped.into_iter() {
+        let daily = map
+            .into_iter()
+            .map(|(d, value)| Count {
+                label: d.format("%Y-%m-%d").to_string(),
+                value,
+            })
+            .collect();
+        result.push(PersonDaily {
+            name: name.to_string(),
+            daily,
+        });
+    }
+
+    result.sort_by_key(|p| p.name.clone());
+    result
+}
+
+fn fun_facts(messages: &[Message]) -> Vec<FunFact> {
+    let mut grouped: HashMap<&str, Vec<&Message>> = HashMap::new();
+    for m in messages {
+        grouped.entry(m.sender.as_str()).or_default().push(m);
+    }
+
+    let mut facts = Vec::with_capacity(grouped.len());
+    for (name, msgs) in grouped.into_iter() {
+        let mut total_words = 0u32;
+        let mut longest_message = 0u32;
+        let mut freq: HashMap<String, u32> = HashMap::new();
+        let mut emoji_freq: HashMap<String, u32> = HashMap::new();
+
+        for m in msgs.iter() {
+            let mut words_in_message = 0u32;
+            for token in m.text.unicode_words() {
+                let cleaned = token.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase();
+                if cleaned.is_empty() {
+                    continue;
+                }
+                words_in_message += 1;
+                total_words += 1;
+                *freq.entry(cleaned).or_insert(0) += 1;
+            }
+            longest_message = longest_message.max(words_in_message);
+
+            for hit in emoji_re().find_iter(&m.text) {
+                *emoji_freq.entry(hit.as_str().to_string()).or_insert(0) += 1;
+            }
+        }
+
+        let unique_words = freq.values().filter(|v| **v == 1).count() as u32;
+        let avg_len = if msgs.is_empty() {
+            0
+        } else {
+            (total_words as f64 / msgs.len() as f64).round() as u32
+        };
+
+        let mut top_emoji_vec: Vec<_> = emoji_freq.into_iter().collect();
+        top_emoji_vec.sort_by_key(|(_, v)| std::cmp::Reverse(*v));
+        top_emoji_vec.truncate(3);
+
+        facts.push(FunFact {
+            name: name.to_string(),
+            total_words,
+            longest_message_words: longest_message,
+            unique_words,
+            average_message_length: avg_len,
+            top_emojis: top_emoji_vec.into_iter().map(|(k, _)| k).collect(),
+        });
+    }
+
+    facts.sort_by_key(|f| std::cmp::Reverse(f.total_words));
+    facts
+}
+
+fn person_stats(messages: &[Message]) -> Vec<PersonStat> {
+    let mut grouped: HashMap<&str, Vec<&Message>> = HashMap::new();
+    for m in messages {
+        grouped.entry(m.sender.as_str()).or_default().push(m);
+    }
+
+    let mut stats = Vec::with_capacity(grouped.len());
+    for (name, msgs) in grouped.into_iter() {
+        let mut total_words = 0u32;
+        let mut longest_message = 0u32;
+        let mut vocab: HashMap<String, u32> = HashMap::new();
+        let mut emoji_freq: HashMap<String, u32> = HashMap::new();
+
+        for m in &msgs {
+            let mut words_in_message = 0u32;
+            for token in m.text.unicode_words() {
+                let cleaned = token.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase();
+                if cleaned.is_empty() {
+                    continue;
+                }
+                words_in_message += 1;
+                total_words += 1;
+                *vocab.entry(cleaned).or_insert(0) += 1;
+            }
+            longest_message = longest_message.max(words_in_message);
+
+            for hit in emoji_re().find_iter(&m.text) {
+                *emoji_freq.entry(hit.as_str().to_string()).or_insert(0) += 1;
+            }
+        }
+
+        let unique_words = vocab.len() as u32;
+        let avg = if msgs.is_empty() {
+            0.0
+        } else {
+            total_words as f32 / msgs.len() as f32
+        };
+
+        let mut top_emoji_vec: Vec<_> = emoji_freq.into_iter().collect();
+        top_emoji_vec.sort_by_key(|(_, v)| std::cmp::Reverse(*v));
+        top_emoji_vec.truncate(5);
+        let top_emojis = top_emoji_vec
+            .into_iter()
+            .map(|(label, value)| Count { label, value })
+            .collect();
+
+        stats.push(PersonStat {
+            name: name.to_string(),
+            total_words,
+            unique_words,
+            longest_message_words: longest_message,
+            average_words_per_message: avg,
+            top_emojis,
+        });
+    }
+
+    stats.sort_by_key(|s| std::cmp::Reverse(s.total_words));
+    stats
+}
+
+#[wasm_bindgen]
+pub fn analyze_chat(raw: &str, top_words_n: u32, top_emojis_n: u32) -> Result<JsValue, JsValue> {
+    let summary = summarize(raw, top_words_n as usize, top_emojis_n as usize)
+        .map_err(|e| JsValue::from_str(&e))?;
+
+    serde_wasm_bindgen::to_value(&summary).map_err(|e| JsValue::from_str(&e.to_string()))
+}
+
+fn summarize(raw: &str, top_words_n: usize, top_emojis_n: usize) -> Result<Summary, String> {
+    let messages = parse_messages(raw);
+    if messages.is_empty() {
+        return Err("No messages parsed".into());
+    }
+
+    let (del_you, del_others) = deleted_counts(&messages);
+    Ok(Summary {
+        total_messages: messages.len(),
+        by_sender: count_by_sender(&messages),
+        daily: daily_counts(&messages),
+        hourly: hourly_counts(&messages),
+        top_emojis: top_emojis(&messages, top_emojis_n as usize),
+        top_words: top_words(&messages, top_words_n as usize, true),
+        top_words_no_stop: top_words(&messages, top_words_n as usize, false),
+        deleted_you: del_you,
+        deleted_others: del_others,
+        timeline: timeline(&messages),
+        weekly: weekly_counts(&messages),
+        monthly: monthly_counts(&messages),
+        share_of_speech: count_by_sender(&messages),
+        buckets_by_person: buckets_by_person(&messages),
+        word_cloud: word_cloud(&messages, 150, true),
+        word_cloud_no_stop: word_cloud(&messages, 150, false),
+        emoji_cloud: emoji_cloud(&messages, 1000),
+        fun_facts: fun_facts(&messages),
+        person_stats: person_stats(&messages),
+        per_person_daily: per_person_daily(&messages),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_chat() -> &'static str {
+        "[8/19/19, 5:04:35 PM] Addy: 😂😂 wow\n[8/19/19, 5:05:00 PM] Em: You deleted this message\n8/20/19, 7:00 AM - Addy: Another day\n8/21/19, 8:00 AM - Em: This message was deleted\n9/01/19, 9:00 AM - Addy: A fresh month"
+    }
+
+    #[test]
+    fn parses_and_summarizes() {
+        let summary = summarize(sample_chat(), 5, 5).unwrap();
+        assert_eq!(summary.total_messages, 5);
+        assert!(summary.by_sender.len() >= 2);
+        assert_eq!(summary.top_emojis[0].value, 2);
+        assert!(summary.top_words_no_stop.len() >= summary.top_words.len());
+        assert_eq!(summary.deleted_you, 1);
+        assert_eq!(summary.deleted_others, 1);
+        assert!(summary.daily.len() >= 2);
+        assert!(summary.hourly.len() >= 2);
+        assert_eq!(summary.timeline.len(), 14);
+        assert_eq!(summary.weekly.len(), 7);
+        assert_eq!(summary.monthly.len(), 2);
+        assert_eq!(summary.fun_facts.len(), 2);
+        assert!(!summary.word_cloud.is_empty());
+        assert!(!summary.word_cloud_no_stop.is_empty());
+        assert!(!summary.per_person_daily.is_empty());
+        assert_eq!(summary.timeline[1].value, 1);
+    }
+
+    #[test]
+    fn person_stats_counts_words_and_emojis() {
+        let raw = "[8/19/19, 5:04:35 PM] Addy: Hello hello 😀\n8/19/19, 6:10 PM - Em: wow 😀 great";
+        let summary = summarize(raw, 10, 5).unwrap();
+        let addy = summary
+            .person_stats
+            .iter()
+            .find(|p| p.name == "Addy")
+            .expect("has addy");
+        assert_eq!(addy.total_words, 2);
+        assert!(addy.top_emojis.iter().any(|e| e.label == "😀"));
+        let em = summary
+            .person_stats
+            .iter()
+            .find(|p| p.name == "Em")
+            .expect("has em");
+        assert_eq!(em.total_words, 2);
+        assert!(em.top_emojis.iter().any(|e| e.label == "😀"));
+    }
+
+    #[test]
+    fn top_words_respects_stopword_toggle() {
+        let raw = "[8/19/19, 5:04:35 PM] Addy: the the hello world";
+        let summary = summarize(raw, 10, 5).unwrap();
+        let with_stop = summary
+            .top_words
+            .iter()
+            .find(|c| c.label == "hello")
+            .map(|c| c.value)
+            .unwrap_or(0);
+        let without_stop = summary
+            .top_words_no_stop
+            .iter()
+            .find(|c| c.label == "the")
+            .map(|c| c.value)
+            .unwrap_or(0);
+        assert!(with_stop >= 1);
+        assert!(without_stop >= 2);
+    }
+}
