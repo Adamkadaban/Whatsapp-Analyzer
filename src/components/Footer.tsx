@@ -8,7 +8,7 @@ export default function Footer() {
           <span className="badge">Open source</span>
           <a
             className="badge"
-            href="https://github.com/Adamkadaban/WhatsappAnalyzerV2"
+            href="https://github.com/Adamkadaban/Whatsapp-Analyzer"
             target="_blank"
             rel="noreferrer"
             style={{ color: "white", borderBottom: "1px solid rgba(255,255,255,0.2)" }}

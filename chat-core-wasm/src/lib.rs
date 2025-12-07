@@ -47,6 +47,8 @@ struct Summary {
     fun_facts: Vec<FunFact>,
     person_stats: Vec<PersonStat>,
     per_person_daily: Vec<PersonDaily>,
+    sentiment_by_day: Vec<SentimentDay>,
+    sentiment_overall: Vec<SentimentOverall>,
     conversation_starters: Vec<Count>,
     conversation_count: usize,
 }
@@ -86,6 +88,263 @@ struct PersonDaily {
     name: String,
     daily: Vec<Count>,
 }
+
+#[derive(Debug, Clone, Copy)]
+enum SentimentClass {
+    Positive,
+    Neutral,
+    Negative,
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+struct SentimentAgg {
+    sum: f32,
+    count: u32,
+    pos: u32,
+    neu: u32,
+    neg: u32,
+}
+
+impl SentimentAgg {
+    fn push(&mut self, compound: f32, class: SentimentClass) {
+        self.sum += compound;
+        self.count += 1;
+        match class {
+            SentimentClass::Positive => self.pos += 1,
+            SentimentClass::Neutral => self.neu += 1,
+            SentimentClass::Negative => self.neg += 1,
+        }
+    }
+
+    fn mean(&self) -> f32 {
+        if self.count == 0 {
+            0.0
+        } else {
+            self.sum / self.count as f32
+        }
+    }
+}
+
+fn sentiment_lexicons() -> (&'static HashSet<&'static str>, &'static HashSet<&'static str>) {
+    static POS: OnceCell<HashSet<&'static str>> = OnceCell::new();
+    static NEG: OnceCell<HashSet<&'static str>> = OnceCell::new();
+    let pos = POS.get_or_init(|| POSITIVE_WORDS.iter().copied().collect());
+    let neg = NEG.get_or_init(|| NEGATIVE_WORDS.iter().copied().collect());
+    (pos, neg)
+}
+
+fn sentiment_score(text: &str) -> (f32, SentimentClass) {
+    let (pos_words, neg_words) = sentiment_lexicons();
+
+    let mut score: i32 = 0;
+    let mut hits: u32 = 0;
+
+    for token in text.unicode_words() {
+        let cleaned = token.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase();
+        if cleaned.is_empty() {
+            continue;
+        }
+        if pos_words.contains(cleaned.as_str()) {
+            score += 2;
+            hits += 1;
+        } else if neg_words.contains(cleaned.as_str()) {
+            score -= 2;
+            hits += 1;
+        }
+    }
+
+    for emoji in emoji_re().find_iter(text) {
+        let glyph = emoji.as_str();
+        if POSITIVE_EMOJIS.contains(&glyph) {
+            score += 2;
+            hits += 1;
+        } else if NEGATIVE_EMOJIS.contains(&glyph) {
+            score -= 2;
+            hits += 1;
+        }
+    }
+
+    let compound = if hits == 0 {
+        0.0
+    } else {
+        (score as f32) / (hits as f32 * 2.0)
+    }
+    .clamp(-1.0, 1.0);
+
+    let class = classify_sentiment(compound);
+    (compound, class)
+}
+
+fn classify_sentiment(compound: f32) -> SentimentClass {
+    if compound > 0.05 {
+        SentimentClass::Positive
+    } else if compound < -0.05 {
+        SentimentClass::Negative
+    } else {
+        SentimentClass::Neutral
+    }
+}
+
+fn sentiment_breakdown(messages: &[Message]) -> (Vec<SentimentDay>, Vec<SentimentOverall>) {
+    if messages.is_empty() {
+        return (Vec::new(), Vec::new());
+    }
+
+    let mut per_day: HashMap<(String, String), SentimentAgg> = HashMap::new();
+    let mut per_person: HashMap<String, SentimentAgg> = HashMap::new();
+
+    for m in messages {
+        let (compound, class) = sentiment_score(&m.text);
+        let day = m.dt.date().format("%Y-%m-%d").to_string();
+
+        let entry = per_day
+            .entry((m.sender.clone(), day.clone()))
+            .or_insert_with(SentimentAgg::default);
+        entry.push(compound, class);
+
+        per_person
+            .entry(m.sender.clone())
+            .or_insert_with(SentimentAgg::default)
+            .push(compound, class);
+    }
+
+    let mut sentiment_by_day: Vec<SentimentDay> = per_day
+        .into_iter()
+        .map(|((name, day), agg)| SentimentDay {
+            name,
+            day,
+            mean: agg.mean(),
+            pos: agg.pos,
+            neu: agg.neu,
+            neg: agg.neg,
+        })
+        .collect();
+
+    sentiment_by_day.sort_by(|a, b| a.day.cmp(&b.day).then_with(|| a.name.cmp(&b.name)));
+
+    let mut sentiment_overall: Vec<SentimentOverall> = per_person
+        .into_iter()
+        .map(|(name, agg)| SentimentOverall {
+            name,
+            mean: agg.mean(),
+            pos: agg.pos,
+            neu: agg.neu,
+            neg: agg.neg,
+        })
+        .collect();
+
+    sentiment_overall.sort_by(|a, b| {
+        b.mean
+            .partial_cmp(&a.mean)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.name.cmp(&b.name))
+    });
+
+    (sentiment_by_day, sentiment_overall)
+}
+
+#[derive(Debug, Serialize)]
+struct SentimentDay {
+    name: String,
+    day: String,
+    mean: f32,
+    pos: u32,
+    neu: u32,
+    neg: u32,
+}
+
+#[derive(Debug, Serialize)]
+struct SentimentOverall {
+    name: String,
+    mean: f32,
+    pos: u32,
+    neu: u32,
+    neg: u32,
+}
+
+// Compact lexicon for sentiment scoring to keep WASM footprint small.
+const POSITIVE_WORDS: [&str; 37] = [
+    "love",
+    "loving",
+    "loved",
+    "like",
+    "great",
+    "good",
+    "amazing",
+    "awesome",
+    "fantastic",
+    "nice",
+    "cool",
+    "fun",
+    "yay",
+    "happy",
+    "glad",
+    "thanks",
+    "thank",
+    "thx",
+    "congrats",
+    "winner",
+    "win",
+    "excited",
+    "sweet",
+    "wow",
+    "perfect",
+    "best",
+    "brilliant",
+    "enjoy",
+    "enjoying",
+    "haha",
+    "lol",
+    "lmao",
+    "pls",
+    "plz",
+    "support",
+    "proud",
+    "celebrate",
+];
+
+const NEGATIVE_WORDS: [&str; 37] = [
+    "hate",
+    "hating",
+    "hated",
+    "bad",
+    "terrible",
+    "awful",
+    "horrible",
+    "worst",
+    "sad",
+    "angry",
+    "mad",
+    "upset",
+    "tired",
+    "annoyed",
+    "pain",
+    "hurt",
+    "broken",
+    "break",
+    "breakup",
+    "cry",
+    "crying",
+    "sucks",
+    "suck",
+    "wtf",
+    "meh",
+    "lame",
+    "loser",
+    "lost",
+    "problem",
+    "issues",
+    "issue",
+    "never",
+    "nope",
+    "cannot",
+    "can't",
+    "sorry",
+    "ugh",
+];
+
+const POSITIVE_EMOJIS: [&str; 12] = ["😀", "😃", "😄", "😁", "😆", "😍", "😊", "😂", "🤣", "👍", "🙏", "❤️"];
+const NEGATIVE_EMOJIS: [&str; 10] = ["😢", "😭", "😡", "😠", "👎", "💔", "😞", "😔", "🙁", "☹️"];
 
 #[derive(Debug, Clone)]
 struct Message {
@@ -227,7 +486,7 @@ fn conversation_initiations_with_gap(messages: &[Message], gap_minutes: i64) -> 
 fn re_bracket() -> &'static Regex {
     static RE: OnceCell<Regex> = OnceCell::new();
     RE.get_or_init(|| {
-        Regex::new(r"^[\u{feff}\u{200e}]?\[(?P<date>\d{1,2}/\d{1,2}/\d{2}),\s+(?P<time>[^\]]+)\]\s+(?P<name>[^:]+):\s+(?P<msg>.*)$")
+        Regex::new(r"^[\u{feff}\u{200e}]?\[(?P<date>\d{1,2}[\/.]\d{1,2}[\/.]\d{2,4}),\s+(?P<time>[^\]]+)\]\s+(?P<name>[^:]+):\s+(?P<msg>.*)$")
             .expect("valid regex")
     })
 }
@@ -235,18 +494,64 @@ fn re_bracket() -> &'static Regex {
 fn re_hyphen() -> &'static Regex {
     static RE: OnceCell<Regex> = OnceCell::new();
     RE.get_or_init(|| {
-        Regex::new(r"^(?P<date>\d{1,2}/\d{1,2}/\d{2}),\s+(?P<time>\d{1,2}:\d{2}(?::\d{2})?\s*[AP]M)\s+-\s+(?P<name>[^:]+):\s+(?P<msg>.*)$")
+        Regex::new(r"^(?P<date>\d{1,2}[\/.]\d{1,2}[\/.]\d{2,4}),\s+(?P<time>\d{1,2}:\d{2}(?::\d{2})?(?:\s*[AP]M)?)\s+-\s+(?P<name>[^:]+):\s+(?P<msg>.*)$")
             .expect("valid regex")
     })
 }
 
 fn parse_timestamp(date: &str, time: &str) -> Option<NaiveDateTime> {
-    let cleaned = time.replace('\u{202f}', " ").replace('\u{00a0}', " ");
-    let t = cleaned.trim();
-    let candidates = ["%m/%d/%y, %I:%M:%S %p", "%m/%d/%y, %I:%M %p"];
-    candidates
-        .iter()
-        .find_map(|fmt| NaiveDateTime::parse_from_str(&format!("{date}, {t}"), fmt).ok())
+    let cleaned = time
+        .replace('\u{202f}', " ")
+        .replace('\u{00a0}', " ")
+        .trim()
+        .to_uppercase();
+
+    let prefer_month_first = if date.contains('/') {
+        let mut parts = date.split('/');
+        let first = parts.next().and_then(|p| p.parse::<u32>().ok());
+        let second = parts.next().and_then(|p| p.parse::<u32>().ok());
+        match (first, second) {
+            // If the first part is >12 it's definitely a day, so prefer day-first.
+            (Some(a), Some(_)) if a > 12 => false,
+            // If the second part is >12 then the first must be the month.
+            (Some(_), Some(b)) if b > 12 => true,
+            _ => true, // default to month/day to mirror previous behavior and tests
+        }
+    } else {
+        false
+    };
+
+    let mut formats: Vec<&str> = Vec::new();
+
+    // Build format list in the preferred order to reduce ambiguous swaps.
+    if date.contains('.') {
+        formats.extend_from_slice(&["%d.%m.%Y, %H:%M:%S", "%d.%m.%Y, %H:%M", "%d.%m.%y, %H:%M:%S", "%d.%m.%y, %H:%M"]);
+        formats.extend_from_slice(&["%d.%m.%Y, %I:%M:%S %p", "%d.%m.%Y, %I:%M %p", "%d.%m.%y, %I:%M:%S %p", "%d.%m.%y, %I:%M %p"]);
+    } else {
+        if prefer_month_first {
+            formats.extend_from_slice(&["%m/%d/%Y, %H:%M:%S", "%m/%d/%Y, %H:%M", "%m/%d/%y, %H:%M:%S", "%m/%d/%y, %H:%M"]);
+            formats.extend_from_slice(&["%d/%m/%Y, %H:%M:%S", "%d/%m/%Y, %H:%M", "%d/%m/%y, %H:%M:%S", "%d/%m/%y, %H:%M"]);
+            formats.extend_from_slice(&["%m/%d/%Y, %I:%M:%S %p", "%m/%d/%Y, %I:%M %p", "%m/%d/%y, %I:%M:%S %p", "%m/%d/%y, %I:%M %p"]);
+            formats.extend_from_slice(&["%d/%m/%Y, %I:%M:%S %p", "%d/%m/%Y, %I:%M %p", "%d/%m/%y, %I:%M:%S %p", "%d/%m/%y, %I:%M %p"]);
+        } else {
+            formats.extend_from_slice(&["%d/%m/%Y, %H:%M:%S", "%d/%m/%Y, %H:%M", "%d/%m/%y, %H:%M:%S", "%d/%m/%y, %H:%M"]);
+            formats.extend_from_slice(&["%m/%d/%Y, %H:%M:%S", "%m/%d/%Y, %H:%M", "%m/%d/%y, %H:%M:%S", "%m/%d/%y, %H:%M"]);
+            formats.extend_from_slice(&["%d/%m/%Y, %I:%M:%S %p", "%d/%m/%Y, %I:%M %p", "%d/%m/%y, %I:%M:%S %p", "%d/%m/%y, %I:%M %p"]);
+            formats.extend_from_slice(&["%m/%d/%Y, %I:%M:%S %p", "%m/%d/%Y, %I:%M %p", "%m/%d/%y, %I:%M:%S %p", "%m/%d/%y, %I:%M %p"]);
+        }
+    }
+
+    formats.iter().find_map(|fmt| {
+        NaiveDateTime::parse_from_str(&format!("{date}, {cleaned}"), fmt)
+            .ok()
+            .and_then(|dt| {
+                if dt.year() < 100 {
+                    dt.with_year(dt.year() + 2000)
+                } else {
+                    Some(dt)
+                }
+            })
+    })
 }
 
 fn clean_sender(name: &str) -> String {
@@ -763,6 +1068,7 @@ fn summarize(raw: &str, top_words_n: usize, top_emojis_n: usize) -> Result<Summa
 
     let (del_you, del_others) = deleted_counts(&messages);
     let (conversation_starters, conversation_count) = conversation_initiations(&messages);
+    let (sentiment_by_day, sentiment_overall) = sentiment_breakdown(&messages);
     Ok(Summary {
         total_messages: messages.len(),
         by_sender: count_by_sender(&messages),
@@ -784,6 +1090,8 @@ fn summarize(raw: &str, top_words_n: usize, top_emojis_n: usize) -> Result<Summa
         fun_facts: fun_facts(&messages),
         person_stats: person_stats(&messages),
         per_person_daily: per_person_daily(&messages),
+        sentiment_by_day,
+        sentiment_overall,
         conversation_starters,
         conversation_count,
     })
@@ -839,6 +1147,19 @@ mod tests {
             .expect("has em");
         assert_eq!(em.total_words, 2);
         assert!(em.top_emojis.iter().any(|e| e.label == "😀"));
+    }
+
+    #[test]
+    fn parses_common_whatsapp_formats() {
+        let raw = "13.12.2023, 22:45 - Alice: Guten Abend\n[14/12/2023, 07:05:10] Bob: Morning!\n1/2/24, 9:15 AM - Carol: Hi";
+        let messages = parse_messages(raw);
+        assert_eq!(messages.len(), 3);
+        assert!(messages.iter().any(|m| m.sender == "Alice"));
+        assert!(messages.iter().any(|m| m.sender == "Bob"));
+        assert!(messages.iter().any(|m| m.sender == "Carol"));
+        // Ensure 24h and 12h timestamps both land in the expected day
+        assert_eq!(messages[0].dt.date().day(), 13);
+        assert_eq!(messages[1].dt.date().day(), 14);
     }
 
     #[test]
@@ -942,6 +1263,22 @@ mod tests {
             .expect("has A");
         // Equal counts; alphabetical tie-break -> blue hex
         assert_eq!(a.dominant_color.as_deref(), Some("#64d8ff"));
+    }
+
+    #[test]
+    fn sentiment_is_computed() {
+        let raw = "[8/19/19, 5:04:35 PM] Addy: I love this!\n8/20/19, 7:00 AM - Em: this is terrible";
+        let summary = summarize(raw, 5, 5).unwrap();
+        assert!(!summary.sentiment_by_day.is_empty());
+        assert!(!summary.sentiment_overall.is_empty());
+        assert!(summary
+            .sentiment_overall
+            .iter()
+            .any(|s| s.name == "Addy" && s.mean > 0.0));
+        assert!(summary
+            .sentiment_overall
+            .iter()
+            .any(|s| s.name == "Em" && s.mean < 0.0));
     }
 
     #[test]

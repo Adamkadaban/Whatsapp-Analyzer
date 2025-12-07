@@ -10,6 +10,6 @@ describe("Footer", () => {
     expect(screen.getByText("Open source")).toBeInTheDocument();
 
     const link = screen.getByRole("link", { name: /View code/i });
-    expect(link).toHaveAttribute("href", "https://github.com/Adamkadaban/WhatsappAnalyzerV2");
+    expect(link).toHaveAttribute("href", "https://github.com/Adamkadaban/Whatsapp-Analyzer");
   });
 });

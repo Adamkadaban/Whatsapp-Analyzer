@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ChangeEvent, type DragEvent } from "react";
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, LabelList, Pie, PieChart, PolarAngleAxis, PolarGrid, Radar, RadarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, LabelList, Line, LineChart, Pie, PieChart, PolarAngleAxis, PolarGrid, Radar, RadarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import WordCloud from "../components/WordCloud";
 import EmojiCloud from "../components/EmojiCloud";
 import ChartCard from "../components/ChartCard";
@@ -156,6 +156,56 @@ export default function Dashboard() {
 
   const wordCloud = summary ? (filterStopwords ? summary.word_cloud : summary.word_cloud_no_stop) : [];
   const emojiCloud = summary?.emoji_cloud ?? [];
+
+  const sentimentByDay = summary?.sentiment_by_day ?? [];
+  const sentimentOverall = summary?.sentiment_overall ?? [];
+
+  const sentimentLaneData = useMemo(() => {
+    if (!sentimentByDay.length) return [] as Record<string, number | string>[];
+    const byDay = new Map<string, Record<string, number | string>>();
+    sentimentByDay.forEach((row) => {
+      const entry = byDay.get(row.day) ?? { day: row.day };
+      entry[row.name] = Number(row.mean.toFixed(3));
+      byDay.set(row.day, entry);
+    });
+    return Array.from(byDay.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([, value]) => value);
+  }, [sentimentByDay]);
+
+  const sentimentStacked = useMemo(() => {
+    if (!sentimentOverall.length) return [] as Array<Record<string, number | string>>;
+    return sentimentOverall.map((row) => {
+      const total = Math.max(row.pos + row.neu + row.neg, 1);
+      return {
+        name: row.name,
+        mean: Number(row.mean.toFixed(3)),
+        pos: Number(((row.pos as number) / total * 100).toFixed(1)),
+        neu: Number(((row.neu as number) / total * 100).toFixed(1)),
+        neg: Number(((row.neg as number) / total * 100).toFixed(1)),
+      };
+    });
+  }, [sentimentOverall]);
+
+  const sentimentTimeline = useMemo(() => {
+    if (!sentimentByDay.length) return [] as { day: string; mean: number }[];
+    const grouped = new Map<string, { sum: number; count: number }>();
+    sentimentByDay.forEach((row) => {
+      const weight = Math.max(row.pos + row.neu + row.neg, 1);
+      const entry = grouped.get(row.day) ?? { sum: 0, count: 0 };
+      entry.sum += row.mean * weight;
+      entry.count += weight;
+      grouped.set(row.day, entry);
+    });
+    return Array.from(grouped.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([day, agg]) => ({ day, mean: agg.count == 0 ? 0 : Number((agg.sum / agg.count).toFixed(3)) }));
+  }, [sentimentByDay]);
+
+  const hasSentiment = sentimentByDay.length > 0;
+
+  const [activeSentimentIndex, setActiveSentimentIndex] = useState<number | null>(null);
+  const sentimentOpacity = (idx: number) => (activeSentimentIndex === null || activeSentimentIndex === idx ? 1 : 0.3);
 
   const [fileName, setFileName] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
@@ -548,6 +598,93 @@ export default function Dashboard() {
                 </div>
               </ChartCard>
             </div>
+
+            {hasSentiment && (
+              <div className="grid chart-grid">
+                <ChartCard title="Mood lanes by person" subtitle="Daily mean sentiment (−1 to 1)">
+                  <div style={{ height: 260 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={sentimentLaneData} margin={{ left: -4, right: 8 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                        <XAxis dataKey="day" tick={{ fill: "var(--muted)", fontSize: 12 }} axisLine={false} tickLine={false} minTickGap={20} />
+                        <YAxis domain={[-1, 1]} tick={{ fill: "var(--muted)", fontSize: 12 }} axisLine={false} tickLine={false} allowDecimals />
+                        <Tooltip contentStyle={{ background: "#0a0b0f", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 12 }} />
+                        {sentimentOverall.map((p, idx) => (
+                          <Line
+                            key={p.name}
+                            type="monotone"
+                            dataKey={p.name}
+                            stroke={getColor(p.name, idx)}
+                            strokeWidth={2}
+                            dot={false}
+                            connectNulls
+                          />
+                        ))}
+                        <Legend />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </ChartCard>
+
+                <ChartCard title="Polarity mix per person" subtitle="Share of positive / neutral / negative messages">
+                  <div style={{ height: 260 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart
+                        data={sentimentStacked}
+                        margin={{ left: -10, right: 10 }}
+                        onMouseMove={(state) => setActiveSentimentIndex(state?.activeTooltipIndex ?? null)}
+                        onMouseLeave={() => setActiveSentimentIndex(null)}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                        <XAxis dataKey="name" tick={{ fill: "var(--muted)", fontSize: 12 }} axisLine={false} tickLine={false} />
+                        <YAxis domain={[0, 100]} tickFormatter={(v) => `${v}%`} tick={{ fill: "var(--muted)", fontSize: 12 }} axisLine={false} tickLine={false} />
+                        <Tooltip
+                          contentStyle={{ background: "#0a0b0f", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 12 }}
+                          formatter={(v: number) => `${v}%`}
+                          cursor={{ fill: "rgba(255,255,255,0.04)" }}
+                        />
+                        <Bar dataKey="pos" stackId="sent" name="Positive" radius={[4, 4, 0, 0]} fill="#7cf9c0">
+                          {sentimentStacked.map((entry, idx) => (
+                            <Cell key={`${entry.name}-pos`} opacity={sentimentOpacity(idx)} />
+                          ))}
+                        </Bar>
+                        <Bar dataKey="neu" stackId="sent" name="Neutral" radius={[0, 0, 0, 0]} fill="#ffd166">
+                          {sentimentStacked.map((entry, idx) => (
+                            <Cell key={`${entry.name}-neu`} opacity={sentimentOpacity(idx)} />
+                          ))}
+                        </Bar>
+                        <Bar dataKey="neg" stackId="sent" name="Negative" radius={[0, 0, 4, 4]} fill="#ff7edb">
+                          {sentimentStacked.map((entry, idx) => (
+                            <Cell key={`${entry.name}-neg`} opacity={sentimentOpacity(idx)} />
+                          ))}
+                        </Bar>
+                        <Legend />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </ChartCard>
+
+                <ChartCard title="Overall mood drift" subtitle="Weighted by message volume">
+                  <div style={{ height: 240 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={sentimentTimeline} margin={{ left: -8, right: 8 }}>
+                        <defs>
+                          <linearGradient id="sentimentGradient" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#64d8ff" stopOpacity={0.55} />
+                            <stop offset="100%" stopColor="#64d8ff" stopOpacity={0} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                        <XAxis dataKey="day" tick={{ fill: "var(--muted)", fontSize: 12 }} axisLine={false} tickLine={false} minTickGap={16} />
+                        <YAxis domain={[-1, 1]} tick={{ fill: "var(--muted)", fontSize: 12 }} axisLine={false} tickLine={false} />
+                        <Tooltip contentStyle={{ background: "#0a0b0f", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 12 }} />
+                        <Area type="monotone" dataKey="mean" stroke="#64d8ff" strokeWidth={2.5} fill="url(#sentimentGradient)" />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </ChartCard>
+              </div>
+            )}
 
             <div style={{ display: "grid", gap: 16 }}>
               <div className="card" style={{ display: "grid", gap: 10, minHeight: 320 }}>

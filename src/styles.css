@@ -64,9 +64,9 @@ section {
   gap: 8px;
   border-radius: 999px;
   padding: 14px 20px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: linear-gradient(120deg, rgba(100, 216, 255, 0.18), rgba(255, 126, 219, 0.15));
-  color: #0a0b0f;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: linear-gradient(135deg, rgba(100, 216, 255, 0.26), rgba(255, 126, 219, 0.22));
+  color: var(--text);
   font-weight: 700;
   letter-spacing: 0.01em;
   box-shadow: var(--glow);
@@ -75,7 +75,7 @@ section {
 
 .btn:hover {
   transform: translateY(-2px);
-  box-shadow: 0 15px 80px rgba(255, 126, 219, 0.3);
+  box-shadow: 0 15px 80px rgba(255, 126, 219, 0.38);
 }
 
 .tag {

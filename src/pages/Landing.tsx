@@ -30,7 +30,7 @@ export default function Landing() {
               </Link>
               <a
                 className="btn ghost"
-                href="https://github.com/Adamkadaban/WhatsappAnalyzerV2"
+                href="https://github.com/Adamkadaban/Whatsapp-Analyzer"
                 target="_blank"
                 rel="noreferrer"
                 style={{ borderColor: "rgba(255,255,255,0.28)", color: "rgba(255,255,255,0.88)", boxShadow: "none" }}

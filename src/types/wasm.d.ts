@@ -47,8 +47,27 @@ declare module "../../pkg/chat_core_wasm" {
     fun_facts: FunFact[];
     person_stats: PersonStat[];
     per_person_daily: PersonDaily[];
+    sentiment_by_day: SentimentDay[];
+    sentiment_overall: SentimentOverall[];
     conversation_starters: Count[];
     conversation_count: number;
+  }
+
+  export interface SentimentDay {
+    name: string;
+    day: string;
+    mean: number;
+    pos: number;
+    neu: number;
+    neg: number;
+  }
+
+  export interface SentimentOverall {
+    name: string;
+    mean: number;
+    pos: number;
+    neu: number;
+    neg: number;
   }
 
   export interface PersonDaily {

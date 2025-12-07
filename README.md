@@ -1,4 +1,4 @@
-# WhatsApp Analyzer V2
+# Whatsapp-Analyzer
 
 Client-side WhatsApp chat analytics with a React/Vite UI. Everything runs locally in the browser—no uploads.
 
