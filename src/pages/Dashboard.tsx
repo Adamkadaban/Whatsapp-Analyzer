@@ -169,12 +169,21 @@ export default function Dashboard() {
     setAnalyzing(false);
 
     try {
+      if (file.size === 0) {
+        throw new Error("This file is empty. Export again and try.");
+      }
+
       const text = await file.text();
+      if (!text.trim()) {
+        throw new Error("No text found in this export.");
+      }
+
       const res = await analyzeText(text);
       setPendingSummary(res);
     } catch (err) {
       console.error(err);
-      setError("Failed to analyze chat. Please try another file.");
+      const message = err instanceof Error ? err.message : "Failed to analyze chat. Please try another file.";
+      setError(message);
       setFileName(null);
     } finally {
       setProcessing(false);
@@ -186,10 +195,13 @@ export default function Dashboard() {
       // Fake a brief "analyzing" state for UX
       setAnalyzing(true);
       setTimeout(() => {
-        setSummary(pendingSummary);
-        setPendingSummary(null);
-        setFileName(null);
-        setAnalyzing(false);
+        try {
+          setSummary(pendingSummary);
+          setPendingSummary(null);
+          setFileName(null);
+        } finally {
+          setAnalyzing(false);
+        }
       }, 800);
     }
   }

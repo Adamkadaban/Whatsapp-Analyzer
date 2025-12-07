@@ -1,4 +1,4 @@
-import init, { analyze_chat, init_panic_hook, type Summary } from "../../pkg/chat_core_wasm";
+import init, { analyze_chat, init_panic_hook, type Summary } from "../../pkg/chat_core_wasm.js";
 
 let initialized = false;
 

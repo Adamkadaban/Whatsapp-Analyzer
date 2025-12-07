@@ -879,4 +879,74 @@ mod tests {
         assert!(with_stop >= 1);
         assert!(without_stop >= 2);
     }
+
+    #[test]
+    fn conversation_starters_respect_gap() {
+        // Two conversations separated by > 30 minutes; initiators should be Addy then Em.
+        let raw = "[8/19/19, 5:00:00 PM] Addy: Hi\n[8/19/19, 5:10:00 PM] Em: ok\n[8/19/19, 6:00:01 PM] Em: New convo\n[8/19/19, 6:05:00 PM] Addy: reply";
+        let summary = summarize(raw, 5, 5).unwrap();
+        assert_eq!(summary.conversation_count, 2);
+        let starters = summary
+            .conversation_starters
+            .iter()
+            .map(|c| (c.label.as_str(), c.value))
+            .collect::<std::collections::HashMap<_, _>>();
+        assert_eq!(starters.get("Addy"), Some(&1));
+        assert_eq!(starters.get("Em"), Some(&1));
+    }
+
+    #[test]
+    fn timeline_fills_missing_days() {
+        // Messages on 1st and 3rd should create zero on 2nd.
+        let raw = "[9/1/19, 9:00:00 AM] A: hello\n[9/3/19, 9:00:00 AM] A: again";
+        let summary = summarize(raw, 5, 5).unwrap();
+        assert_eq!(summary.timeline.len(), 3);
+        assert_eq!(summary.timeline[1].label, "2019-09-02");
+        assert_eq!(summary.timeline[1].value, 0);
+    }
+
+    #[test]
+    fn buckets_cover_hour_day_month() {
+        let raw = "[1/1/24, 1:00:00 AM] A: hi\n[1/1/24, 1:00:00 PM] B: hey\n[2/2/24, 1:00:00 AM] A: yo";
+        let summary = summarize(raw, 5, 5).unwrap();
+        let a = summary
+            .buckets_by_person
+            .iter()
+            .find(|b| b.name == "A")
+            .expect("has A");
+        assert_eq!(a.hourly[1], 2);
+        assert_eq!(a.daily[1], 1); // Monday Jan 1
+        assert_eq!(a.daily[5], 1); // Friday Feb 2
+        assert_eq!(a.monthly[0], 1);
+        assert_eq!(a.monthly[1], 1);
+    }
+
+    #[test]
+    fn stopwords_and_extras_filtered_from_word_cloud() {
+        let raw = "[8/19/19, 5:00:00 PM] A: the and omitted> hello world\n[8/19/19, 5:01:00 PM] A: hello";
+        let summary = summarize(raw, 10, 5).unwrap();
+        let words = summary.word_cloud.iter().map(|c| c.label.as_str()).collect::<Vec<_>>();
+        assert!(words.contains(&"hello"));
+        assert!(!words.contains(&"the"));
+        assert!(!words.contains(&"omitted"));
+    }
+
+    #[test]
+    fn color_tie_break_is_alphabetical() {
+        let raw = "[8/19/19, 5:00:00 PM] A: red red\n[8/19/19, 5:01:00 PM] A: blue blue";
+        let summary = summarize(raw, 5, 5).unwrap();
+        let a = summary
+            .person_stats
+            .iter()
+            .find(|p| p.name == "A")
+            .expect("has A");
+        // Equal counts; alphabetical tie-break -> blue hex
+        assert_eq!(a.dominant_color.as_deref(), Some("#64d8ff"));
+    }
+
+    #[test]
+    fn summarize_errors_on_empty() {
+        let err = summarize("", 5, 5).unwrap_err();
+        assert!(err.contains("No messages parsed"));
+    }
 }
