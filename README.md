@@ -38,5 +38,9 @@ pnpm build
 ```
 Outputs go to `web/dist`. The GitHub Actions workflow (`.github/workflows/deploy.yml`) builds WASM, runs the web build, writes the CNAME (`wa.hackback.zip`), and deploys to GitHub Pages.
 
+## Exporting a PDF snapshot
+- Load a chat on the Dashboard, then click **Export PDF** in the header controls.
+- The PDF mirrors the current dashboard layout and styling; your data stays on-device.
+
 ## Notes
 - Data never leaves the browser. Drag-drop or file-pick your exported `.txt` chat and view insights instantly.

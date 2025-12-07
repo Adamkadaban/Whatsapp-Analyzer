@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ChangeEvent, type DragEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from "react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, LabelList, Line, LineChart, Pie, PieChart, PolarAngleAxis, PolarGrid, Radar, RadarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import WordCloud from "../components/WordCloud";
 import EmojiCloud from "../components/EmojiCloud";
@@ -27,6 +27,9 @@ export default function Dashboard() {
   const [showColorModal, setShowColorModal] = useState(false);
   const [showStopTooltip, setShowStopTooltip] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const dashboardRef = useRef<HTMLElement | null>(null);
 
   const hasData = Boolean(summary);
 
@@ -291,12 +294,54 @@ export default function Dashboard() {
     setPendingSummary(null);
     setFileName(null);
     setError(null);
+    setExportError(null);
   }
 
   const isReady = pendingSummary !== null && !processing && !analyzing;
 
+  async function handleExportPdf() {
+    if (!dashboardRef.current) return;
+    setExportError(null);
+    setExporting(true);
+
+    try {
+      const node = dashboardRef.current;
+      const [{ toPng }, { jsPDF }] = await Promise.all([
+        import("html-to-image"),
+        import("jspdf"),
+      ]);
+
+      const imgData = await toPng(node, {
+        pixelRatio: 2,
+        cacheBust: true,
+        backgroundColor: getComputedStyle(document.body).backgroundColor || "#05060a",
+        filter: (n) => {
+          const el = n as HTMLElement;
+          if (el.classList?.contains("export-hide")) return false;
+          return true;
+        },
+        onClone: (clonedDoc) => {
+          clonedDoc.querySelectorAll(".export-banner").forEach((el) => {
+            (el as HTMLElement).style.display = "inline-flex";
+          });
+        },
+      });
+
+      const { width, height } = node.getBoundingClientRect();
+      const orientation = width >= height ? "landscape" : "portrait";
+      const pdf = new jsPDF({ orientation, unit: "px", format: [width, height], compress: true });
+      pdf.addImage(imgData, "PNG", 0, 0, width, height, undefined, "FAST");
+      pdf.save("whatsapp-dashboard.pdf");
+    } catch (err) {
+      console.error(err);
+      setExportError("Failed to export PDF. Please try again.");
+    } finally {
+      setExporting(false);
+    }
+  }
+
   return (
-    <main>
+    <main ref={dashboardRef}>
       {(processing || isReady || analyzing) && (
         <div className="loading-overlay" role="status" aria-live="polite">
           <div className="loading-card">
@@ -370,6 +415,14 @@ export default function Dashboard() {
       <section className="container" style={{ display: "grid", gap: "24px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: "16px", alignItems: "center", flexWrap: "wrap" }}>
           <div>
+            <div className="export-banner" aria-hidden={!exporting}>
+              <a href="https://wa.hackback.zip" target="_blank" rel="noreferrer" className="export-banner-link">
+                <span className="logo" style={{ fontSize: 18 }}>
+                  <span style={{ color: "#25d366" }}>WA</span> Analyzer
+                </span>
+                <span className="export-tagline">WhatsApp insights in seconds</span>
+              </a>
+            </div>
             <h2 style={{ margin: "8px 0" }}>Dashboard</h2>
             {!hasData && (
               <p style={{ color: "var(--muted)", margin: 0 }}>
@@ -378,7 +431,7 @@ export default function Dashboard() {
             )}
           </div>
           {hasData && (
-            <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+            <div style={{ display: "flex", gap: 12, alignItems: "center" }} className="export-hide">
               <div className="switch-row">
                 <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 6 }}>
                   <span
@@ -422,6 +475,9 @@ export default function Dashboard() {
               <button className="btn ghost" onClick={() => setShowColorModal(true)} disabled={!summary}>
                 Configure colors
               </button>
+              <button className="btn ghost" onClick={handleExportPdf} disabled={!summary || exporting}>
+                {exporting ? "Exporting…" : "Export PDF"}
+              </button>
               <button className="btn ghost" onClick={resetToUpload} disabled={processing}>
                 Upload another chat
               </button>
@@ -430,6 +486,7 @@ export default function Dashboard() {
         </div>
         {hasData && (
           <>
+            {exportError && <div style={{ color: "#ff7edb" }}>{exportError}</div>}
             <div className="card" style={{ display: "grid", gap: 12 }}>
               <div className="tag">Timeline</div>
               <h3 style={{ margin: 0 }}>Chat timeline</h3>
