@@ -44,6 +44,10 @@ struct Summary {
     word_cloud: Vec<Count>,
     word_cloud_no_stop: Vec<Count>,
     emoji_cloud: Vec<Count>,
+    top_phrases: Vec<Count>,
+    top_phrases_no_stop: Vec<Count>,
+    per_person_phrases: Vec<PersonPhrases>,
+    per_person_phrases_no_stop: Vec<PersonPhrases>,
     fun_facts: Vec<FunFact>,
     person_stats: Vec<PersonStat>,
     per_person_daily: Vec<PersonDaily>,
@@ -87,6 +91,12 @@ struct PersonStat {
 struct PersonDaily {
     name: String,
     daily: Vec<Count>,
+}
+
+#[derive(Debug, Serialize)]
+struct PersonPhrases {
+    name: String,
+    phrases: Vec<Count>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -786,17 +796,11 @@ fn top_words(messages: &[Message], take: usize, filter_stop: bool) -> Vec<Count>
 
     let mut map = HashMap::new();
     for text in messages.iter().map(|m| m.text.as_str()) {
-        for token in text.unicode_words() {
-            let cleaned = token
-                .trim_matches(|c: char| !c.is_alphanumeric())
-                .to_lowercase();
-            if cleaned.len() < 3 {
+        for token in tokenize(text, filter_stop, &stop) {
+            if token.len() < 3 {
                 continue;
             }
-            if filter_stop && stop.contains(cleaned.as_str()) {
-                continue;
-            }
-            *map.entry(cleaned).or_insert(0u32) += 1;
+            *map.entry(token).or_insert(0u32) += 1;
         }
     }
     let mut items: Vec<_> = map
@@ -812,17 +816,11 @@ fn word_cloud(messages: &[Message], take: usize, filter_stop: bool) -> Vec<Count
     let stop = stopwords_set();
     let mut map = HashMap::new();
     for text in messages.iter().map(|m| m.text.as_str()) {
-        for token in text.unicode_words() {
-            let cleaned = token
-                .trim_matches(|c: char| !c.is_alphanumeric())
-                .to_lowercase();
-            if cleaned.is_empty() {
+        for token in tokenize(text, filter_stop, &stop) {
+            if token.is_empty() {
                 continue;
             }
-            if filter_stop && stop.contains(cleaned.as_str()) {
-                continue;
-            }
-            *map.entry(cleaned).or_insert(0u32) += 1;
+            *map.entry(token).or_insert(0u32) += 1;
         }
     }
     let mut items: Vec<_> = map
@@ -838,6 +836,99 @@ fn emoji_cloud(messages: &[Message], take: usize) -> Vec<Count> {
     let mut counts = top_emojis(messages, usize::MAX);
     counts.truncate(take);
     counts
+}
+
+fn url_re() -> &'static Regex {
+    static RE: OnceCell<Regex> = OnceCell::new();
+    RE.get_or_init(|| {
+        // Matches common URL forms so we can strip them before tokenization.
+        Regex::new(r"(?i)\bhttps?://\S+|\bwww\.[^\s]+").expect("url regex")
+    })
+}
+
+fn tokenize<'a>(text: &'a str, filter_stop: bool, stop: &HashSet<&'static str>) -> Vec<String> {
+    let cleaned = url_re().replace_all(text, " ");
+    cleaned
+        .unicode_words()
+        .map(|token| token.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase())
+        .filter(|t| !t.is_empty())
+        .filter(|t| !(filter_stop && stop.contains(t.as_str())))
+        .collect()
+}
+
+fn top_phrases(messages: &[Message], take: usize, filter_stop: bool) -> Vec<Count> {
+    let stop = stopwords_set();
+    let mut map: HashMap<String, u32> = HashMap::new();
+
+    for text in messages.iter().map(|m| m.text.as_str()) {
+        let tokens = tokenize(text, filter_stop, &stop);
+        if tokens.len() < 2 {
+            continue;
+        }
+
+        for window in 2..=5 {
+            if tokens.len() < window {
+                break;
+            }
+            for slice in tokens.windows(window) {
+                // Skip phrases that are effectively empty after filtering
+                if slice.iter().all(|t| t.is_empty()) {
+                    continue;
+                }
+                let phrase = slice.join(" ");
+                *map.entry(phrase).or_insert(0u32) += 1;
+            }
+        }
+    }
+
+    let mut items: Vec<_> = map
+        .into_iter()
+        .map(|(label, value)| Count { label, value })
+        .collect();
+    items.sort_by_key(|c| std::cmp::Reverse(c.value));
+    items.truncate(take);
+    items
+}
+
+fn per_person_phrases(messages: &[Message], take: usize, filter_stop: bool) -> Vec<PersonPhrases> {
+    let stop = stopwords_set();
+    let mut map: HashMap<String, HashMap<String, u32>> = HashMap::new();
+
+    for m in messages {
+        let tokens = tokenize(&m.text, filter_stop, &stop);
+        if tokens.len() < 2 {
+            continue;
+        }
+        for window in 2..=5 {
+            if tokens.len() < window {
+                break;
+            }
+            for slice in tokens.windows(window) {
+                if slice.iter().all(|t| t.is_empty()) {
+                    continue;
+                }
+                let phrase = slice.join(" ");
+                let entry = map.entry(m.sender.clone()).or_default();
+                *entry.entry(phrase).or_insert(0u32) += 1;
+            }
+        }
+    }
+
+    let mut res: Vec<PersonPhrases> = map
+        .into_iter()
+        .map(|(name, phrases)| {
+            let mut items: Vec<_> = phrases
+                .into_iter()
+                .map(|(label, value)| Count { label, value })
+                .collect();
+            items.sort_by_key(|c| std::cmp::Reverse(c.value));
+            items.truncate(take);
+            PersonPhrases { name, phrases: items }
+        })
+        .collect();
+
+    res.sort_by(|a, b| a.name.cmp(&b.name));
+    res
 }
 
 fn deleted_counts(messages: &[Message]) -> (u32, u32) {
@@ -1124,6 +1215,10 @@ fn summarize(raw: &str, top_words_n: usize, top_emojis_n: usize) -> Result<Summa
         word_cloud: word_cloud(&messages, 150, true),
         word_cloud_no_stop: word_cloud(&messages, 150, false),
         emoji_cloud: emoji_cloud(&messages, 1000),
+        top_phrases: top_phrases(&messages, 100, true),
+        top_phrases_no_stop: top_phrases(&messages, 100, false),
+        per_person_phrases: per_person_phrases(&messages, 20, true),
+        per_person_phrases_no_stop: per_person_phrases(&messages, 20, false),
         fun_facts: fun_facts(&messages),
         person_stats: person_stats(&messages),
         per_person_daily: per_person_daily(&messages),
@@ -1236,6 +1331,63 @@ mod tests {
             .unwrap_or(0);
         assert!(with_stop >= 1);
         assert!(without_stop >= 2);
+    }
+
+    #[test]
+    fn top_phrases_counts_bigrams_and_trigrams() {
+        let raw = "[1/1/24, 1:00:00 PM] A: hello world hello world\n[1/1/24, 1:01:00 PM] A: hello world again";
+        let summary = summarize(raw, 10, 5).unwrap();
+        let hw = summary
+            .top_phrases
+            .iter()
+            .find(|c| c.label == "hello world")
+            .map(|c| c.value)
+            .unwrap_or(0);
+        assert!(hw >= 3);
+
+        let trigram = summary
+            .top_phrases
+            .iter()
+            .find(|c| c.label == "hello world hello")
+            .map(|c| c.value)
+            .unwrap_or(0);
+        assert!(trigram >= 1);
+    }
+
+    #[test]
+    fn phrases_ignore_urls() {
+        let raw = "[1/1/24, 1:00:00 PM] A: check https://www.google.com later\n[1/1/24, 1:01:00 PM] A: check https://www.google.com later";
+        let summary = summarize(raw, 10, 5).unwrap();
+        let phrases: Vec<&str> = summary
+            .top_phrases
+            .iter()
+            .map(|c| c.label.as_str())
+            .collect();
+
+        assert!(phrases.contains(&"check later"));
+        assert!(phrases
+            .iter()
+            .all(|p| !p.contains("http") && !p.contains("www")));
+    }
+
+    #[test]
+    fn per_person_phrases_tracked() {
+        let raw = "[1/1/24, 1:00:00 PM] A: hello world\n[1/1/24, 1:01:00 PM] B: different phrase here";
+        let summary = summarize(raw, 10, 5).unwrap();
+
+        let a = summary
+            .per_person_phrases
+            .iter()
+            .find(|p| p.name == "A")
+            .expect("has A");
+        assert!(a.phrases.iter().any(|c| c.label == "hello world"));
+
+        let b = summary
+            .per_person_phrases
+            .iter()
+            .find(|p| p.name == "B")
+            .expect("has B");
+        assert!(b.phrases.iter().any(|c| c.label == "different phrase"));
     }
 
     #[test]
