@@ -67,6 +67,31 @@ export interface SentimentOverall {
 	neg: number;
 }
 
+export interface JourneyMessage {
+	sender: string;
+	text: string;
+	timestamp: string;
+	is_you: boolean;
+}
+
+export interface JourneyMoment {
+	title: string;
+	description: string;
+	date: string;
+	messages: JourneyMessage[];
+	sentiment_score: number;
+}
+
+export interface Journey {
+	first_day: string;
+	last_day: string;
+	total_days: number;
+	total_messages: number;
+	first_messages: JourneyMessage[];
+	last_messages: JourneyMessage[];
+	interesting_moments: JourneyMoment[];
+}
+
 export interface Summary {
 	total_messages: number;
 	by_sender: Count[];
@@ -97,4 +122,5 @@ export interface Summary {
 	sentiment_overall: SentimentOverall[];
 	conversation_starters: Count[];
 	conversation_count: number;
+	journey: Journey | null;
 }

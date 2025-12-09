@@ -74,6 +74,7 @@ struct Summary {
     sentiment_overall: Vec<SentimentOverall>,
     conversation_starters: Vec<Count>,
     conversation_count: usize,
+    journey: Option<Journey>,
 }
 
 #[derive(Debug, Serialize)]
@@ -116,6 +117,37 @@ struct PersonDaily {
 struct PersonPhrases {
     name: String,
     phrases: Vec<Count>,
+}
+
+/// A single message for rendering in the journey section
+#[derive(Debug, Clone, Serialize)]
+struct JourneyMessage {
+    sender: String,
+    text: String,
+    timestamp: String, // ISO 8601 datetime string
+    is_you: bool,      // true if this is likely "you" (the exporter)
+}
+
+/// A notable moment with context messages
+#[derive(Debug, Clone, Serialize)]
+struct JourneyMoment {
+    title: String,
+    description: String,
+    date: String,
+    messages: Vec<JourneyMessage>,
+    sentiment_score: f32,
+}
+
+/// The full journey through your messages
+#[derive(Debug, Clone, Serialize)]
+struct Journey {
+    first_day: String,
+    last_day: String,
+    total_days: u32,
+    total_messages: usize,
+    first_messages: Vec<JourneyMessage>,  // First few messages of the conversation
+    last_messages: Vec<JourneyMessage>,   // Last few messages of the conversation
+    interesting_moments: Vec<JourneyMoment>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1725,6 +1757,203 @@ pub fn analyze_chat_native(
     serde_json::to_string(&summary).map_err(|e| e.to_string())
 }
 
+/// Convert a Message to a JourneyMessage
+fn to_journey_message(msg: &Message, likely_you: &str) -> JourneyMessage {
+    JourneyMessage {
+        sender: msg.sender.clone(),
+        text: msg.text.clone(),
+        timestamp: msg.dt.format("%Y-%m-%dT%H:%M:%S").to_string(),
+        is_you: msg.sender == likely_you,
+    }
+}
+
+/// Find "interesting" moments in the chat based on sentiment extremes and other signals
+fn find_interesting_moments(messages: &[Message], likely_you: &str, max_moments: usize) -> Vec<JourneyMoment> {
+    if messages.len() < 10 {
+        return Vec::new();
+    }
+
+    // Score each message for "interestingness"
+    // High absolute sentiment, long messages, exclamation marks, question marks, etc.
+    let mut scored: Vec<(usize, f32, f32)> = Vec::new(); // (index, interest_score, sentiment)
+    
+    for (i, msg) in messages.iter().enumerate() {
+        let (sentiment, _) = sentiment_score(&msg.text);
+        let text_len = msg.text.len() as f32;
+        let exclamation_count = msg.text.matches('!').count() as f32;
+        let question_count = msg.text.matches('?').count() as f32;
+        let emoji_count = extract_emojis(&msg.text).len() as f32;
+        let caps_ratio = if !msg.text.is_empty() {
+            msg.text.chars().filter(|c| c.is_uppercase()).count() as f32 / msg.text.len() as f32
+        } else {
+            0.0
+        };
+        
+        // Skip very short or system messages
+        if text_len < 10.0 || msg.text.contains("omitted") || msg.text.contains("deleted") {
+            continue;
+        }
+        
+        // Interest score: combination of factors
+        let interest = sentiment.abs() * 2.0
+            + (text_len / 100.0).min(3.0)
+            + exclamation_count * 0.5
+            + question_count * 0.3
+            + emoji_count * 0.3
+            + caps_ratio * 2.0;
+        
+        scored.push((i, interest, sentiment));
+    }
+    
+    // Sort by interest score descending
+    scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    
+    // Take top moments, but ensure they're spread apart (at least 50 messages apart)
+    let mut selected: Vec<(usize, f32)> = Vec::new();
+    for (idx, _interest, sentiment) in scored {
+        let too_close = selected.iter().any(|(sel_idx, _)| {
+            (idx as i64 - *sel_idx as i64).abs() < 50
+        });
+        if !too_close {
+            selected.push((idx, sentiment));
+            if selected.len() >= max_moments {
+                break;
+            }
+        }
+    }
+    
+    // Sort by chronological order
+    selected.sort_by_key(|(idx, _)| *idx);
+    
+    // Build moments with context
+    let mut moments = Vec::new();
+    for (idx, sentiment) in selected {
+        let start = idx.saturating_sub(2);
+        let end = (idx + 3).min(messages.len());
+        
+        let context_messages: Vec<JourneyMessage> = messages[start..end]
+            .iter()
+            .map(|m| to_journey_message(m, likely_you))
+            .collect();
+        
+        let main_msg = &messages[idx];
+        let title = if sentiment > 0.3 {
+            "A joyful moment ✨".to_string()
+        } else if sentiment < -0.3 {
+            "A heartfelt exchange 💭".to_string()
+        } else if main_msg.text.contains('?') {
+            "A curious conversation ❓".to_string()
+        } else if main_msg.text.len() > 200 {
+            "A meaningful message 💬".to_string()
+        } else {
+            "A memorable moment 📝".to_string()
+        };
+        
+        let description = format!(
+            "On {}",
+            main_msg.dt.format("%B %d, %Y at %I:%M %p")
+        );
+        
+        moments.push(JourneyMoment {
+            title,
+            description,
+            date: main_msg.dt.format("%Y-%m-%d").to_string(),
+            messages: context_messages,
+            sentiment_score: sentiment,
+        });
+    }
+    
+    moments
+}
+
+/// Build the journey through your messages
+fn build_journey(messages: &[Message]) -> Option<Journey> {
+    if messages.is_empty() {
+        return None;
+    }
+    
+    // Sort messages chronologically (important when multiple files are combined)
+    let mut sorted_messages = messages.to_vec();
+    sorted_messages.sort_by_key(|m| m.dt);
+    
+    let first_msg = sorted_messages.first()?;
+    let last_msg = sorted_messages.last()?;
+    
+    let first_day = first_msg.dt.date();
+    let last_day = last_msg.dt.date();
+    let total_days = (last_day - first_day).num_days().max(1) as u32;
+    
+    // Determine who is "you" - typically the person who sent "You deleted this message"
+    // or has fewer messages (exporter is often the one getting the export)
+    let mut sender_counts: HashMap<&str, usize> = HashMap::new();
+    let mut deleted_you_sender: Option<&str> = None;
+    
+    for msg in &sorted_messages {
+        *sender_counts.entry(&msg.sender).or_insert(0) += 1;
+        if msg.text.contains("You deleted this message") && deleted_you_sender.is_none() {
+            deleted_you_sender = Some(&msg.sender);
+        }
+    }
+    
+    // If we found a "You deleted" message, that sender is "you"
+    // Otherwise, pick the sender with fewer messages (often the exporter)
+    let likely_you = deleted_you_sender.unwrap_or_else(|| {
+        sender_counts
+            .iter()
+            .min_by_key(|(_, count)| *count)
+            .map(|(sender, _)| *sender)
+            .unwrap_or("")
+    });
+    
+    // Get first conversation messages (until a 30-min gap or max 5 messages)
+    let mut first_messages: Vec<JourneyMessage> = Vec::new();
+    for (i, msg) in sorted_messages.iter().enumerate() {
+        first_messages.push(to_journey_message(msg, likely_you));
+        if first_messages.len() >= 5 {
+            break;
+        }
+        // Check if next message is more than 30 mins away (new conversation)
+        if let Some(next_msg) = sorted_messages.get(i + 1) {
+            let gap = next_msg.dt.signed_duration_since(msg.dt).num_minutes();
+            if gap > CONVERSATION_GAP_MINUTES {
+                break;
+            }
+        }
+    }
+    
+    // Get last conversation messages (go backwards from end until 30-min gap or max 5)
+    let mut last_messages: Vec<JourneyMessage> = Vec::new();
+    for i in (0..sorted_messages.len()).rev() {
+        let msg = &sorted_messages[i];
+        last_messages.push(to_journey_message(msg, likely_you));
+        if last_messages.len() >= 5 {
+            break;
+        }
+        // Check if previous message is more than 30 mins before (new conversation)
+        if i > 0 {
+            let prev_msg = &sorted_messages[i - 1];
+            let gap = msg.dt.signed_duration_since(prev_msg.dt).num_minutes();
+            if gap > CONVERSATION_GAP_MINUTES {
+                break;
+            }
+        }
+    }
+    // Reverse to get chronological order
+    last_messages.reverse();
+    
+    let interesting_moments = find_interesting_moments(&sorted_messages, likely_you, 3);
+    
+    Some(Journey {
+        first_day: first_day.format("%B %d, %Y").to_string(),
+        last_day: last_day.format("%B %d, %Y").to_string(),
+        total_days,
+        total_messages: sorted_messages.len(),
+        first_messages,
+        last_messages,
+        interesting_moments,
+    })
+}
+
 fn summarize(raw: &str, top_words_n: usize, top_emojis_n: usize) -> Result<Summary, String> {
     #[cfg(all(target_arch = "wasm32", feature = "timing"))]
     let t0 = perf_now();
@@ -1875,6 +2104,12 @@ fn summarize(raw: &str, top_words_n: usize, top_emojis_n: usize) -> Result<Summa
     log_step!("per_person_daily", t22);
 
     #[cfg(all(target_arch = "wasm32", feature = "timing"))]
+    let t23 = perf_now();
+    let journey_val = build_journey(&messages);
+    #[cfg(all(target_arch = "wasm32", feature = "timing"))]
+    log_step!("build_journey", t23);
+
+    #[cfg(all(target_arch = "wasm32", feature = "timing"))]
     {
         let total = perf_now() - t0;
         web_sys::console::log_1(&format!("[wasm] summarize total: {:.1}ms", total).into());
@@ -1910,6 +2145,7 @@ fn summarize(raw: &str, top_words_n: usize, top_emojis_n: usize) -> Result<Summa
         sentiment_overall,
         conversation_starters,
         conversation_count,
+        journey: journey_val,
     })
 }
 
@@ -2324,5 +2560,50 @@ mod tests {
     fn summarize_errors_on_empty() {
         let err = summarize("", 5, 5).unwrap_err();
         assert!(err.contains("No messages parsed"));
+    }
+
+    #[test]
+    fn journey_includes_multiple_first_and_last_messages() {
+        // Create chat where first 3 messages are within 30 mins, then gap, then last 3 within 30 mins
+        let raw = r#"[1/1/20, 10:00:00 AM] Alice: First message!
+[1/1/20, 10:05:00 AM] Bob: Second message
+[1/1/20, 10:10:00 AM] Alice: Third message
+[1/1/20, 2:00:00 PM] Bob: Middle of day
+[1/1/20, 8:00:00 PM] Alice: Evening start
+[1/1/20, 8:05:00 PM] Bob: Evening reply
+[1/1/20, 8:10:00 PM] Alice: Evening end"#;
+        let summary = summarize(raw, 5, 5).unwrap();
+        let journey = summary.journey.expect("journey should exist");
+        
+        // First conversation should have 3 messages (10:00, 10:05, 10:10 - all within 30 min)
+        assert_eq!(journey.first_messages.len(), 3, "first conversation should have 3 messages");
+        assert_eq!(journey.first_messages[0].text, "First message!");
+        assert_eq!(journey.first_messages[1].text, "Second message");
+        assert_eq!(journey.first_messages[2].text, "Third message");
+        
+        // Last conversation should have 3 messages (8:00, 8:05, 8:10 - all within 30 min)
+        assert_eq!(journey.last_messages.len(), 3, "last conversation should have 3 messages");
+        assert_eq!(journey.last_messages[0].text, "Evening start");
+        assert_eq!(journey.last_messages[1].text, "Evening reply");
+        assert_eq!(journey.last_messages[2].text, "Evening end");
+    }
+
+    #[test]
+    fn journey_sorts_messages_from_multiple_files() {
+        // Simulate multiple files concatenated where second file has earlier messages
+        let raw = r#"[1/2/20, 10:00:00 AM] Alice: Day 2 message
+[1/2/20, 10:05:00 AM] Bob: Day 2 reply
+[1/1/20, 10:00:00 AM] Alice: Day 1 first message
+[1/1/20, 10:05:00 AM] Bob: Day 1 reply"#;
+        let summary = summarize(raw, 5, 5).unwrap();
+        let journey = summary.journey.expect("journey should exist");
+        
+        // First messages should be from Day 1 (chronologically first), not file order
+        assert_eq!(journey.first_messages[0].text, "Day 1 first message");
+        assert_eq!(journey.first_messages[1].text, "Day 1 reply");
+        
+        // Last messages should be from Day 2 (chronologically last)
+        assert_eq!(journey.last_messages[0].text, "Day 2 message");
+        assert_eq!(journey.last_messages[1].text, "Day 2 reply");
     }
 }

@@ -7,6 +7,7 @@ import ChartCard from "../components/ChartCard";
 import PieTooltip, { type SenderDatum } from "../components/PieTooltip";
 import StatCard from "../components/StatCard";
 import { analyzeText, type Summary } from "../lib/wasm";
+import type { JourneyMessage } from "../lib/types";
 
 // Enable performance timing logs only in dev mode.
 const DEBUG_TIMING = import.meta.env.DEV;
@@ -25,6 +26,52 @@ const weekdayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 type DailyDatum = { day: string; messages: number };
 type KpiDatum = { label: string; value: string; detail?: string };
 
+/** Format ISO timestamp to readable time */
+function formatMessageTime(timestamp: string): string {
+  const date = new Date(timestamp);
+  return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+/** WhatsApp-style message bubble */
+function MessageBubble({ message, senderColor }: { message: JourneyMessage; senderColor: string }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        justifyContent: message.is_you ? "flex-end" : "flex-start",
+        marginBottom: 8,
+      }}
+    >
+      <div
+        style={{
+          maxWidth: "80%",
+          padding: "8px 12px",
+          borderRadius: message.is_you ? "16px 16px 4px 16px" : "16px 16px 16px 4px",
+          background: message.is_you
+            ? "linear-gradient(135deg, #005c4b, #004d40)"
+            : "rgba(255,255,255,0.08)",
+          border: "1px solid rgba(255,255,255,0.06)",
+          position: "relative",
+        }}
+      >
+        <div style={{ fontWeight: 600, fontSize: 13, color: senderColor, marginBottom: 2 }}>
+          {message.sender}
+        </div>
+        <div style={{ fontSize: 14, lineHeight: 1.4, wordBreak: "break-word" }}>{message.text}</div>
+        <div
+          style={{
+            fontSize: 11,
+            color: "rgba(255,255,255,0.5)",
+            marginTop: 4,
+            textAlign: "right",
+          }}
+        >
+          {formatMessageTime(message.timestamp)}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function Dashboard() {
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -1085,6 +1132,143 @@ export default function Dashboard() {
                 <EmojiCloud words={emojiCloud} height={320} />
               </div>
             </div>
+
+            {/* Journey Through Your Messages */}
+            {summary?.journey && (
+              <div className="card" style={{ marginTop: 24 }}>
+                <div className="tag" style={{ marginBottom: 12 }}>✨ Story</div>
+                <h2 style={{ margin: "0 0 24px 0", fontSize: 28, fontWeight: 700 }}>
+                  Journey Through Your Messages
+                </h2>
+
+                {/* Overview stats */}
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+                    gap: 16,
+                    marginBottom: 32,
+                    padding: 20,
+                    background: "rgba(255,255,255,0.03)",
+                    borderRadius: 16,
+                    border: "1px solid rgba(255,255,255,0.06)",
+                  }}
+                >
+                  <div style={{ textAlign: "center" }}>
+                    <div style={{ fontSize: 32, fontWeight: 700, color: "#64d8ff" }}>
+                      {summary.journey.total_messages.toLocaleString()}
+                    </div>
+                    <div style={{ color: "var(--muted)", fontSize: 13 }}>messages</div>
+                  </div>
+                  <div style={{ textAlign: "center" }}>
+                    <div style={{ fontSize: 32, fontWeight: 700, color: "#ff7edb" }}>
+                      {summary.journey.total_days.toLocaleString()}
+                    </div>
+                    <div style={{ color: "var(--muted)", fontSize: 13 }}>days of chatting</div>
+                  </div>
+                  <div style={{ textAlign: "center" }}>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: "var(--text)" }}>
+                      {summary.journey.first_day}
+                    </div>
+                    <div style={{ color: "var(--muted)", fontSize: 13 }}>first message</div>
+                  </div>
+                  <div style={{ textAlign: "center" }}>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: "var(--text)" }}>
+                      {summary.journey.last_day}
+                    </div>
+                    <div style={{ color: "var(--muted)", fontSize: 13 }}>last message</div>
+                  </div>
+                </div>
+
+                {/* First message */}
+                <div style={{ marginBottom: 32 }}>
+                  <h3 style={{ margin: "0 0 12px 0", fontSize: 18, display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 24 }}>🌅</span> Where it all began
+                  </h3>
+                  <p style={{ color: "var(--muted)", margin: "0 0 12px 0", fontSize: 14 }}>
+                    Your conversation started with:
+                  </p>
+                  <div
+                    style={{
+                      background: "rgba(255,255,255,0.02)",
+                      borderRadius: 16,
+                      padding: 16,
+                      border: "1px solid rgba(255,255,255,0.06)",
+                    }}
+                  >
+                    {summary.journey.first_messages.map((msg, idx) => (
+                      <MessageBubble
+                        key={idx}
+                        message={msg}
+                        senderColor={colorMap[msg.sender] || colors[idx % colors.length]}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                {/* Interesting moments */}
+                {summary.journey.interesting_moments.length > 0 && (
+                  <div style={{ marginBottom: 32 }}>
+                    <h3 style={{ margin: "0 0 16px 0", fontSize: 18, display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 24 }}>💫</span> Memorable moments
+                    </h3>
+                    <div style={{ display: "grid", gap: 20 }}>
+                      {summary.journey.interesting_moments.map((moment, idx) => (
+                        <div
+                          key={idx}
+                          style={{
+                            background: "rgba(255,255,255,0.02)",
+                            borderRadius: 16,
+                            padding: 16,
+                            border: "1px solid rgba(255,255,255,0.06)",
+                          }}
+                        >
+                          <div style={{ marginBottom: 12 }}>
+                            <div style={{ fontWeight: 700, fontSize: 16 }}>{moment.title}</div>
+                            <div style={{ color: "var(--muted)", fontSize: 13 }}>{moment.description}</div>
+                          </div>
+                          <div>
+                            {moment.messages.map((msg, msgIdx) => (
+                              <MessageBubble
+                                key={msgIdx}
+                                message={msg}
+                                senderColor={colorMap[msg.sender] || colors[msgIdx % colors.length]}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Last message */}
+                <div>
+                  <h3 style={{ margin: "0 0 12px 0", fontSize: 18, display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 24 }}>🌙</span> The latest chapter
+                  </h3>
+                  <p style={{ color: "var(--muted)", margin: "0 0 12px 0", fontSize: 14 }}>
+                    Your most recent messages:
+                  </p>
+                  <div
+                    style={{
+                      background: "rgba(255,255,255,0.02)",
+                      borderRadius: 16,
+                      padding: 16,
+                      border: "1px solid rgba(255,255,255,0.06)",
+                    }}
+                  >
+                    {summary.journey.last_messages.map((msg, idx) => (
+                      <MessageBubble
+                        key={idx}
+                        message={msg}
+                        senderColor={colorMap[msg.sender] || colors[idx % colors.length]}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
           </>
         )}
 
