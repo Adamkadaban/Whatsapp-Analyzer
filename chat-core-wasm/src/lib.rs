@@ -1954,7 +1954,8 @@ mod tests {
 
     #[test]
     fn person_stats_counts_words_and_emojis() {
-        let raw = "[8/19/19, 5:04:35 PM] Alice: Hello hello 😀\n8/19/19, 6:10 PM - Bob: wow 😀 great";
+        let raw =
+            "[8/19/19, 5:04:35 PM] Alice: Hello hello 😀\n8/19/19, 6:10 PM - Bob: wow 😀 great";
         let summary = summarize(raw, 10, 5).unwrap();
         let alice = summary
             .person_stats
