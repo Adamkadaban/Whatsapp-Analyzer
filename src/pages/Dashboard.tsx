@@ -8,6 +8,7 @@ import PieTooltip, { type SenderDatum } from "../components/PieTooltip";
 import StatCard from "../components/StatCard";
 import { analyzeText, type Summary } from "../lib/wasm";
 import type { JourneyMessage } from "../lib/types";
+import { calcLongestStreak, type DailyDatum } from "../lib/streak";
 
 // Enable performance timing logs only in dev mode.
 const DEBUG_TIMING = import.meta.env.DEV;
@@ -22,7 +23,6 @@ const MAX_LEGEND_SENDERS = 6;
 const monthLabels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const weekdayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-type DailyDatum = { day: string; messages: number };
 type KpiDatum = { label: string; value: string; detail?: string };
 
 /** Format ISO timestamp to readable time */
@@ -100,7 +100,7 @@ export default function Dashboard() {
     [summary]
   );
 
-  // Parse YYYY-MM-DD as local date (not UTC) to avoid timezone shifts
+  // Parse YYYY-MM-DD as local date for display purposes
   const parseLocalDate = (dateStr: string) => {
     const [year, month, day] = dateStr.split("-").map(Number);
     return new Date(year, month - 1, day);
@@ -117,36 +117,7 @@ export default function Dashboard() {
     return dailyData.reduce((min, d) => (d.messages < min.messages ? d : min), dailyData[0]);
   }, [dailyData]);
 
-  const longestStreakData = useMemo(() => {
-    if (!dailyData.length) return { days: 0, start: "", end: "" };
-    const sorted = [...dailyData].sort((a, b) => parseLocalDate(a.day).getTime() - parseLocalDate(b.day).getTime());
-    let maxStreak = 1;
-    let currentStreak = 1;
-    let maxStart = 0;
-    let maxEnd = 0;
-    let currentStart = 0;
-    const oneDay = 24 * 60 * 60 * 1000;
-    for (let i = 1; i < sorted.length; i++) {
-      const prev = parseLocalDate(sorted[i - 1].day).getTime();
-      const curr = parseLocalDate(sorted[i].day).getTime();
-      if (curr - prev === oneDay) {
-        currentStreak++;
-        if (currentStreak > maxStreak) {
-          maxStreak = currentStreak;
-          maxStart = currentStart;
-          maxEnd = i;
-        }
-      } else {
-        currentStreak = 1;
-        currentStart = i;
-      }
-    }
-    return {
-      days: maxStreak,
-      start: sorted[maxStart]?.day ?? "",
-      end: sorted[maxEnd]?.day ?? sorted[maxStart]?.day ?? "",
-    };
-  }, [dailyData]);
+  const longestStreakData = useMemo(() => calcLongestStreak(dailyData), [dailyData]);
 
   const formatDayLabel = (day: string) => {
     const date = parseLocalDate(day);

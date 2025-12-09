@@ -32,7 +32,7 @@ pub fn init_panic_hook() {
 }
 
 #[derive(Debug, Serialize, Clone)]
-struct Count {
+pub struct Count {
     label: String,
     value: u32,
 }
@@ -44,7 +44,7 @@ struct HourCount {
 }
 
 #[derive(Debug, Serialize)]
-struct Summary {
+pub struct Summary {
     total_messages: usize,
     by_sender: Vec<Count>,
     daily: Vec<Count>,
@@ -75,6 +75,12 @@ struct Summary {
     conversation_starters: Vec<Count>,
     conversation_count: usize,
     journey: Option<Journey>,
+}
+
+impl Summary {
+    pub fn daily_counts(&self) -> &[Count] {
+        &self.daily
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -765,6 +771,79 @@ fn daily_counts(messages: &[Message]) -> Vec<Count> {
             value,
         })
         .collect()
+}
+
+/// Compute longest consecutive-day streak from daily counts (YYYY-MM-DD labels).
+pub fn longest_streak(daily: &[Count]) -> Option<(u32, String, String)> {
+    if daily.is_empty() {
+        return None;
+    }
+    // Sort lexicographically; labels are ISO dates.
+    let mut sorted = daily.to_vec();
+    sorted.sort_by(|a, b| a.label.cmp(&b.label));
+
+    let parse_day = |s: &str| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok();
+    let (mut max_streak, mut current_streak) = (1u32, 1u32);
+    let (mut max_start_idx, mut max_end_idx) = (0usize, 0usize);
+    let mut current_start_idx = 0usize;
+
+    for i in 1..sorted.len() {
+        let prev = parse_day(&sorted[i - 1].label);
+        let curr = parse_day(&sorted[i].label);
+        if let (Some(p), Some(c)) = (prev, curr) {
+            if c - p == chrono::Duration::days(1) {
+                current_streak += 1;
+                if current_streak > max_streak {
+                    max_streak = current_streak;
+                    max_start_idx = current_start_idx;
+                    max_end_idx = i;
+                }
+                continue;
+            }
+        }
+        current_streak = 1;
+        current_start_idx = i;
+    }
+
+    let start = sorted.get(max_start_idx).map(|c| c.label.clone())?;
+    let end = sorted
+        .get(max_end_idx)
+        .map(|c| c.label.clone())
+        .unwrap_or_else(|| start.clone());
+    Some((max_streak, start, end))
+}
+
+/// Fast path: compute longest streak directly from raw chat text without building full summary.
+/// Parses WhatsApp-style headers and increments per-day counts, then computes streak.
+pub fn longest_streak_from_raw(raw: &str) -> Option<(u32, String, String)> {
+    use std::collections::BTreeMap;
+
+    let mut map: BTreeMap<NaiveDate, u32> = BTreeMap::new();
+    for line in raw.lines() {
+        if let Some(caps) = re_bracket()
+            .captures(line)
+            .or_else(|| re_hyphen().captures(line))
+        {
+            let date = caps.name("date").map(|m| m.as_str()).unwrap_or("");
+            let time = caps.name("time").map(|m| m.as_str()).unwrap_or("");
+            if let Some(dt) = parse_timestamp(date, time) {
+                *map.entry(dt.date()).or_insert(0) += 1;
+            }
+        }
+    }
+
+    if map.is_empty() {
+        return None;
+    }
+
+    let daily: Vec<Count> = map
+        .into_iter()
+        .map(|(d, value)| Count {
+            label: d.format("%Y-%m-%d").to_string(),
+            value,
+        })
+        .collect();
+    longest_streak(&daily)
 }
 
 fn hourly_counts(messages: &[Message]) -> Vec<HourCount> {
@@ -2044,7 +2123,7 @@ fn build_journey(messages: &[Message]) -> Option<Journey> {
     })
 }
 
-fn summarize(raw: &str, top_words_n: usize, top_emojis_n: usize) -> Result<Summary, String> {
+pub fn summarize(raw: &str, top_words_n: usize, top_emojis_n: usize) -> Result<Summary, String> {
     #[cfg(all(target_arch = "wasm32", feature = "timing"))]
     let t0 = perf_now();
 
@@ -2242,6 +2321,63 @@ fn summarize(raw: &str, top_words_n: usize, top_emojis_n: usize) -> Result<Summa
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn longest_streak_from_raw_matches_daily_counts() {
+        let raw = sample_chat();
+        let msgs = parse_messages(raw);
+        let daily = daily_counts(&msgs);
+        let expected = longest_streak(&daily);
+        let fast = longest_streak_from_raw(raw);
+        assert_eq!(expected, fast);
+    }
+    #[test]
+    fn longest_streak_basic() {
+        let daily = vec![
+            Count {
+                label: "2024-01-01".into(),
+                value: 10,
+            },
+            Count {
+                label: "2024-01-02".into(),
+                value: 5,
+            },
+            Count {
+                label: "2024-01-05".into(),
+                value: 1,
+            },
+        ];
+        let (len, start, end) = longest_streak(&daily).unwrap();
+        assert_eq!(len, 2);
+        assert_eq!(start, "2024-01-01");
+        assert_eq!(end, "2024-01-02");
+    }
+
+    #[test]
+    fn longest_streak_ties_pick_first() {
+        let daily = vec![
+            Count {
+                label: "2024-01-01".into(),
+                value: 1,
+            },
+            Count {
+                label: "2024-01-02".into(),
+                value: 1,
+            },
+            Count {
+                label: "2024-01-04".into(),
+                value: 1,
+            },
+            Count {
+                label: "2024-01-05".into(),
+                value: 1,
+            },
+        ];
+        let (len, start, end) = longest_streak(&daily).unwrap();
+        assert_eq!(len, 2);
+        assert_eq!(start, "2024-01-01");
+        assert_eq!(end, "2024-01-02");
+    }
+
     use chrono::NaiveDateTime;
 
     fn msg(sender: &str, text: &str) -> Message {
