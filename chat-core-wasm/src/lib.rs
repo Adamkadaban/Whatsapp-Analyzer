@@ -1329,7 +1329,9 @@ fn per_person_phrases(messages: &[Message], take: usize, _filter_stop: bool) -> 
         1
     };
     let stop = stopwords_set();
-    let mut map: HashMap<String, HashMap<String, (u32, usize, Vec<String>)>> = HashMap::new();
+    // (count, window_size, tokens)
+    type PhraseData = (u32, usize, Vec<String>);
+    let mut map: HashMap<String, HashMap<String, PhraseData>> = HashMap::new();
 
     for m in messages {
         if is_media_omitted_message(&m.text) {
@@ -2186,7 +2188,7 @@ mod tests {
         let raw = "[1/1/24, 1:00:00 PM] A: i think we should go\n[1/1/24, 1:01:00 PM] A: i think it works\n[1/1/24, 1:02:00 PM] A: i think so too\n[1/1/24, 1:03:00 PM] A: quantum entanglement is wild\n[1/1/24, 1:04:00 PM] A: quantum entanglement feels magical\n[1/1/24, 1:05:00 PM] A: quantum entanglement again";
         let summary = summarize(raw, 10, 5).unwrap();
 
-        assert!(summary.salient_phrases.len() >= 1);
+        assert!(!summary.salient_phrases.is_empty());
         // Rare but repeated technical phrase should outrank common filler.
         assert_eq!(summary.salient_phrases[0].label, "quantum entanglement");
     }
