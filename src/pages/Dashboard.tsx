@@ -551,6 +551,10 @@ export default function Dashboard() {
       }
 
       if (!texts.length) {
+        const hasEncodingIssue = skipped.some((s) => s.includes("unreadable text"));
+        if (hasEncodingIssue) {
+          throw new Error("We're having trouble reading your file. Try renaming it to something simple like 'whatsapp.txt' and uploading again.");
+        }
         const detail = skipped.length ? ` Skipped: ${skipped.join(", ")}` : "";
         throw new Error(`No text found. Upload one or more .txt files or a .zip containing .txt exports.${detail}`);
       }
