@@ -7,6 +7,24 @@ use stopwords::{Language, Spark, Stopwords};
 use unicode_segmentation::UnicodeSegmentation;
 use wasm_bindgen::prelude::*;
 
+// Performance timing helpers, enabled via `--features timing` for debugging.
+#[cfg(all(target_arch = "wasm32", feature = "timing"))]
+fn perf_now() -> f64 {
+    web_sys::window()
+        .and_then(|w| w.performance())
+        .map(|p| p.now())
+        .unwrap_or(0.0)
+}
+
+#[cfg(all(target_arch = "wasm32", feature = "timing"))]
+macro_rules! log_step {
+    ($label:expr, $start:expr) => {
+        web_sys::console::log_1(
+            &format!("[wasm] {} took {:.1}ms", $label, perf_now() - $start).into(),
+        );
+    };
+}
+
 #[wasm_bindgen]
 pub fn init_panic_hook() {
     #[cfg(feature = "console_error_panic_hook")]
@@ -44,6 +62,7 @@ struct Summary {
     word_cloud: Vec<Count>,
     word_cloud_no_stop: Vec<Count>,
     emoji_cloud: Vec<Count>,
+    salient_phrases: Vec<Count>,
     top_phrases: Vec<Count>,
     top_phrases_no_stop: Vec<Count>,
     per_person_phrases: Vec<PersonPhrases>,
@@ -93,7 +112,7 @@ struct PersonDaily {
     daily: Vec<Count>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 struct PersonPhrases {
     name: String,
     phrases: Vec<Count>,
@@ -672,10 +691,17 @@ fn filter_system_messages(messages: Vec<Message>) -> Vec<Message> {
 
 fn is_system_message(msg: &Message) -> bool {
     let sender = msg.sender.to_lowercase();
-    sender == "system"
-        || msg
-            .text
-            .contains("Messages and calls are end-to-end encrypted")
+    if sender == "system" {
+        return true;
+    }
+
+    let text = msg.text.trim().to_lowercase();
+
+    // Common WhatsApp system banners and notifications to ignore.
+    text.contains("messages and calls are end-to-end encrypted")
+        || text.contains("created group")
+        || text.contains("changed this group's icon")
+        || (text.contains("security code") && text.contains("tap to learn more"))
 }
 
 fn is_media_omitted_message(text: &str) -> bool {
@@ -752,30 +778,160 @@ fn monthly_counts(messages: &[Message]) -> Vec<Count> {
         .collect()
 }
 
-fn emoji_re() -> &'static Regex {
-    static RE: OnceCell<Regex> = OnceCell::new();
-    RE.get_or_init(|| {
-        // Match complete emoji sequences including:
-        // - Regional indicator pairs (flags like 🇺🇸)
-        // - Base emoji with optional skin tone modifiers (🏻-🏿) and variation selectors (️)
-        // - ZWJ sequences (👨‍👩‍👧‍👦) where emojis are joined by \u{200D}
-        Regex::new(
-            r"(?x)
-            [\u{1F1E6}-\u{1F1FF}]{2}  # Regional indicator pairs (flags)
-            |
-            (?:
-                [\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2300}-\u{23FF}\u{2B50}-\u{2B55}\u{203C}\u{2049}\u{25AA}\u{25AB}\u{25B6}\u{25C0}\u{25FB}-\u{25FE}\u{00A9}\u{00AE}\u{2122}\u{2139}\u{2194}-\u{2199}\u{21A9}\u{21AA}\u{231A}\u{231B}\u{2328}\u{23CF}\u{23E9}-\u{23F3}\u{23F8}-\u{23FA}\u{24C2}\u{25AA}\u{25AB}\u{25B6}\u{25C0}\u{2934}\u{2935}\u{3030}\u{303D}\u{3297}\u{3299}]
-                [\u{1F3FB}-\u{1F3FF}]?  # Optional skin tone modifier
-                \u{FE0F}?               # Optional variation selector
-                (?:\u{200D}             # ZWJ
-                    [\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2640}\u{2642}\u{2695}\u{2696}\u{2708}\u{2764}]
-                    [\u{1F3FB}-\u{1F3FF}]?
-                    \u{FE0F}?
-                )*                      # Zero or more ZWJ + emoji
-            )
-            "
-        ).expect("emoji regex")
-    })
+fn salient_phrases(messages: &[Message], take: usize) -> Vec<Count> {
+    // Scale minimum count with corpus size to avoid processing rare n-grams
+    let min_count: u32 = if messages.len() > 100000 {
+        5
+    } else if messages.len() > 10000 {
+        3
+    } else {
+        2
+    };
+    let stop = stopwords_set();
+
+    let mut unigram_counts: HashMap<String, u32> = HashMap::new();
+    let mut phrase_counts: HashMap<String, (u32, usize, Vec<String>)> = HashMap::new();
+    let mut total_windows: HashMap<usize, u32> = HashMap::new();
+    let mut total_tokens: u32 = 0;
+
+    for m in messages {
+        if is_media_omitted_message(&m.text) {
+            continue;
+        }
+        let tokens = tokenize(&m.text, false, stop);
+        if tokens.len() < 2 {
+            continue;
+        }
+
+        for t in &tokens {
+            *unigram_counts.entry(t.clone()).or_insert(0) += 1;
+            total_tokens += 1;
+        }
+
+        for window in 2..=4 {
+            if tokens.len() < window {
+                break;
+            }
+            for slice in tokens.windows(window) {
+                let stop_count = slice.iter().filter(|t| stop.contains(t.as_str())).count();
+                let non_stop = window - stop_count;
+                if non_stop == 0 {
+                    continue;
+                }
+                let has_long = slice.iter().any(|t| t.len() >= 3);
+                if !has_long {
+                    continue;
+                }
+
+                let (alpha, numeric) = tokens_alpha_numeric_stats(slice);
+                if alpha == 0 {
+                    continue;
+                }
+                let numeric_ratio = numeric as f64 / slice.len() as f64;
+                if numeric_ratio > 0.5 {
+                    continue;
+                }
+
+                let non_stop_ratio = non_stop as f64 / window as f64;
+                if window == 2 && non_stop_ratio < 0.5 {
+                    continue;
+                }
+
+                let phrase = slice.join(" ");
+                let entry = phrase_counts.entry(phrase.clone()).or_insert((
+                    0,
+                    window,
+                    slice.iter().map(|t| t.to_string()).collect(),
+                ));
+                entry.0 += 1;
+                entry.1 = entry.1.max(window);
+                *total_windows.entry(window).or_insert(0) += 1;
+            }
+        }
+    }
+
+    if total_tokens == 0 {
+        return Vec::new();
+    }
+
+    let mut records: Vec<PhraseRecord> = Vec::new();
+    for (phrase, (count, len, tokens)) in phrase_counts.into_iter() {
+        if count < min_count {
+            continue;
+        }
+        let total_w = *total_windows.get(&len).unwrap_or(&0);
+        if total_w == 0 {
+            continue;
+        }
+
+        let mut sum_log_uni = 0.0;
+        for t in &tokens {
+            let Some(c) = unigram_counts.get(t) else {
+                sum_log_uni = 0.0;
+                break;
+            };
+            let c = *c as f64;
+            sum_log_uni += (c / total_tokens as f64).ln();
+        }
+        if sum_log_uni == 0.0 {
+            continue;
+        }
+        let p_phrase = (count as f64) / (total_w as f64);
+        let pmi = p_phrase.ln() - sum_log_uni;
+        if pmi <= 0.0 {
+            continue;
+        }
+
+        let (_stop_count, non_stop) = tokens_stop_stats(&tokens, stop);
+        if non_stop == 0 {
+            continue;
+        }
+        let (alpha, numeric) = tokens_alpha_numeric_stats(&tokens);
+        if alpha == 0 {
+            continue;
+        }
+        let numeric_ratio = if tokens.is_empty() {
+            0.0
+        } else {
+            numeric as f64 / tokens.len() as f64
+        };
+        if numeric_ratio > 0.5 {
+            continue;
+        }
+        let non_stop_ratio = non_stop as f64 / len as f64;
+        if len == 2 && non_stop_ratio < 0.5 {
+            continue;
+        }
+
+        let score =
+            pmi * (count as f64) * non_stop_ratio.max(0.3) * (1.0 + 0.25 * (len as f64 - 2.0));
+
+        records.push(PhraseRecord {
+            phrase,
+            count,
+            len,
+            tokens,
+            score,
+        });
+    }
+
+    records.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| b.count.cmp(&a.count))
+            .then_with(|| b.len.cmp(&a.len))
+            .then_with(|| a.phrase.cmp(&b.phrase))
+    });
+
+    suppress_subphrases(records, take * 5)
+        .into_iter()
+        .take(take)
+        .map(|r| Count {
+            label: r.phrase,
+            value: r.count,
+        })
+        .collect()
 }
 
 fn extract_emojis(text: &str) -> Vec<String> {
@@ -822,8 +978,9 @@ fn top_words(messages: &[Message], take: usize, filter_stop: bool) -> Vec<Count>
         if is_media_omitted_message(text) {
             continue;
         }
-        for token in tokenize(text, filter_stop, &stop) {
-            if token.len() < 3 {
+        for token in tokenize(text, filter_stop, stop) {
+            let short_alnum = token.len() < 3 && token.chars().all(|c| c.is_alphanumeric());
+            if short_alnum {
                 continue;
             }
             *map.entry(token).or_insert(0u32) += 1;
@@ -846,7 +1003,7 @@ fn word_cloud(messages: &[Message], take: usize, filter_stop: bool) -> Vec<Count
         if is_media_omitted_message(text) {
             continue;
         }
-        for token in tokenize(text, filter_stop, &stop) {
+        for token in tokenize(text, filter_stop, stop) {
             if token.is_empty() {
                 continue;
             }
@@ -868,6 +1025,32 @@ fn emoji_cloud(messages: &[Message], take: usize) -> Vec<Count> {
     counts
 }
 
+fn emoji_re() -> &'static Regex {
+    static RE: OnceCell<Regex> = OnceCell::new();
+    RE.get_or_init(|| {
+        // Match complete emoji sequences including:
+        // - Regional indicator pairs (flags like 🇺🇸)
+        // - Base emoji with optional skin tone modifiers (🏻-🏿) and variation selectors (️)
+        // - ZWJ sequences (👨‍👩‍👧‍👦) where emojis are joined by \u{200D}
+        Regex::new(
+            r"(?x)
+            [\u{1F1E6}-\u{1F1FF}]{2}  # Regional indicator pairs (flags)
+            |
+            (?:
+                [\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2300}-\u{23FF}\u{2B50}-\u{2B55}\u{203C}\u{2049}\u{25AA}\u{25AB}\u{25B6}\u{25C0}\u{25FB}-\u{25FE}\u{00A9}\u{00AE}\u{2122}\u{2139}\u{2194}-\u{2199}\u{21A9}\u{21AA}\u{231A}\u{231B}\u{2328}\u{23CF}\u{23E9}-\u{23F3}\u{23F8}-\u{23FA}\u{24C2}\u{25AA}\u{25AB}\u{25B6}\u{25C0}\u{2934}\u{2935}\u{3030}\u{303D}\u{3297}\u{3299}]
+                [\u{1F3FB}-\u{1F3FF}]?  # Optional skin tone modifier
+                \u{FE0F}?               # Optional variation selector
+                (?:\u{200D}             # ZWJ
+                    [\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2640}\u{2642}\u{2695}\u{2696}\u{2708}\u{2764}]
+                    [\u{1F3FB}-\u{1F3FF}]?
+                    \u{FE0F}?
+                )*                      # Zero or more ZWJ + emoji
+            )
+            "
+        ).expect("emoji regex")
+    })
+}
+
 fn url_re() -> &'static Regex {
     static RE: OnceCell<Regex> = OnceCell::new();
     RE.get_or_init(|| {
@@ -876,65 +1059,283 @@ fn url_re() -> &'static Regex {
     })
 }
 
-fn tokenize<'a>(text: &'a str, filter_stop: bool, stop: &HashSet<&'static str>) -> Vec<String> {
-    let cleaned = url_re().replace_all(text, " ");
-    cleaned
-        .unicode_words()
-        .map(|token| token.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase())
-        .filter(|t| !t.is_empty())
-        .filter(|t| !(filter_stop && stop.contains(t.as_str())))
+fn tokenize(text: &str, filter_stop: bool, stop: &HashSet<&'static str>) -> Vec<String> {
+    let cleaned_urls = url_re().replace_all(text, " ");
+    cleaned_urls
+        .split_whitespace()
+        .filter_map(|raw| {
+            let token = raw.to_lowercase();
+            let canonical = token
+                .trim_matches(|c: char| !c.is_alphanumeric())
+                .to_string();
+
+            if filter_stop && !canonical.is_empty() && stop.contains(canonical.as_str()) {
+                return None;
+            }
+
+            if token.is_empty() {
+                None
+            } else {
+                Some(token)
+            }
+        })
         .collect()
 }
 
-fn top_phrases(messages: &[Message], take: usize, _filter_stop: bool) -> Vec<Count> {
-    let stop = stopwords_set();
-    let mut map: HashMap<String, u32> = HashMap::new();
+#[derive(Clone)]
+struct PhraseRecord {
+    phrase: String,
+    count: u32,
+    len: usize,
+    tokens: Vec<String>,
+    score: f64,
+}
 
+fn tokens_stop_stats(tokens: &[String], stop: &HashSet<&'static str>) -> (usize, usize) {
+    let stop_count = tokens.iter().filter(|t| stop.contains(t.as_str())).count();
+    let non_stop = tokens.len().saturating_sub(stop_count);
+    (stop_count, non_stop)
+}
+
+fn tokens_alpha_numeric_stats(tokens: &[String]) -> (usize, usize) {
+    let mut alpha = 0;
+    let mut numeric = 0;
+    for t in tokens {
+        if t.chars().all(|c| c.is_ascii_digit()) {
+            numeric += 1;
+        } else {
+            // Treat any non-pure-digit token (including emoticons like <3 or punctuation-adjacent tokens) as alpha-ish.
+            alpha += 1;
+        }
+    }
+    (alpha, numeric)
+}
+
+fn contains_subsequence(long: &[String], short: &[String]) -> bool {
+    if short.is_empty() || short.len() > long.len() {
+        return false;
+    }
+    long.windows(short.len()).any(|w| w == short)
+}
+
+fn suppress_subphrases(records: Vec<PhraseRecord>, max_input: usize) -> Vec<PhraseRecord> {
+    // Limit input size to avoid O(n²) blowup on large datasets.
+    let records: Vec<PhraseRecord> = if records.len() > max_input {
+        records.into_iter().take(max_input).collect()
+    } else {
+        records
+    };
+
+    let mut kept: Vec<PhraseRecord> = Vec::new();
+    'outer: for rec in records {
+        for existing in kept.iter_mut() {
+            if existing.len > rec.len
+                && existing.count >= 2
+                && contains_subsequence(&existing.tokens, &rec.tokens)
+            {
+                // Drop shorter phrase when a longer containing phrase is established.
+                continue 'outer;
+            }
+
+            if rec.len > existing.len
+                && rec.count >= 2
+                && contains_subsequence(&rec.tokens, &existing.tokens)
+            {
+                let overlap = existing.len as f64 / rec.len as f64;
+                if overlap >= 0.5 && rec.count * 10 >= existing.count * 6 {
+                    // Prefer the longer variant when it is at least ~60% as common as the shorter.
+                    *existing = rec;
+                    continue 'outer;
+                }
+            }
+        }
+        kept.push(rec);
+    }
+    kept
+}
+
+fn top_phrases(messages: &[Message], take: usize, _filter_stop: bool) -> Vec<Count> {
+    const MAX_N: usize = 5;
+    const PMI_THRESHOLD: f64 = 0.1;
+    const SEP: &str = "\x00";
+
+    let stop = stopwords_set();
+
+    let mut total_tokens: u32 = 0;
+    // Use String keys (joined with SEP) instead of Vec<String> for faster hashing.
+    let mut ngram_counts: HashMap<String, u32> = HashMap::new();
+    let mut unigram_counts: HashMap<String, u32> = HashMap::new();
+
+    // Pre-filter tokens per message once.
+    let mut all_token_lists: Vec<Vec<String>> = Vec::with_capacity(messages.len());
     for m in messages {
         let text = m.text.as_str();
         if is_media_omitted_message(text) {
             continue;
         }
-        // Keep stop-words in phrases so the full expression stays intact.
-        let tokens = tokenize(text, false, &stop);
-        if tokens.len() < 2 {
+        let tokens = tokenize(text, false, stop);
+        if tokens.is_empty() {
             continue;
         }
+        total_tokens += tokens.len() as u32;
+        all_token_lists.push(tokens);
+    }
 
-        for window in 2..=5 {
-            if tokens.len() < window {
-                break;
-            }
-            for slice in tokens.windows(window) {
-                // Skip phrases that are effectively empty after filtering
+    if total_tokens == 0 {
+        return Vec::new();
+    }
+
+    // Count n-grams.
+    for tokens in &all_token_lists {
+        let tlen = tokens.len();
+        for i in 0..tlen {
+            for n in 1..=MAX_N.min(tlen - i) {
+                let slice = &tokens[i..i + n];
+
+                // Quick filter: skip all-empty slices.
                 if slice.iter().all(|t| t.is_empty()) {
                     continue;
                 }
-                let phrase = slice.join(" ");
-                *map.entry(phrase).or_insert(0u32) += 1;
+
+                // For n>1, require at least one non-stopword.
+                if n > 1 {
+                    let non_stop = slice.iter().filter(|t| !stop.contains(t.as_str())).count();
+                    if non_stop == 0 {
+                        continue;
+                    }
+                    if n == 2 && non_stop < 1 {
+                        continue;
+                    }
+                }
+
+                // Require at least one alphabetic token, reject >50% numeric.
+                let (alpha, numeric) = tokens_alpha_numeric_stats(slice);
+                if alpha == 0 || (numeric as f64 / n as f64) > 0.5 {
+                    continue;
+                }
+
+                // Build string key by joining with SEP.
+                let key = slice.join(SEP);
+                *ngram_counts.entry(key).or_insert(0) += 1;
+
+                if n == 1 {
+                    *unigram_counts.entry(slice[0].clone()).or_insert(0) += 1;
+                }
             }
         }
     }
 
-    let mut items: Vec<_> = map
+    let total_tokens_f = total_tokens as f64;
+    let mut records: Vec<PhraseRecord> = Vec::new();
+
+    // Minimum count threshold scales with corpus size to avoid processing rare n-grams.
+    // Scale min count more aggressively for large corpora
+    let min_count: u32 = if total_tokens > 500000 {
+        5
+    } else if total_tokens > 100000 {
+        4
+    } else if total_tokens > 50000 {
+        3
+    } else if total_tokens > 10000 {
+        2
+    } else {
+        1
+    };
+
+    for (key, &count) in ngram_counts.iter() {
+        if count < min_count {
+            continue;
+        }
+        // Split key back into tokens.
+        let tokens: Vec<&str> = key.split(SEP).collect();
+        let len = tokens.len();
+        if len < 2 {
+            continue;
+        }
+
+        // Require at least one non-stopword.
+        let non_stop = tokens.iter().filter(|t| !stop.contains(*t)).count();
+        if non_stop == 0 {
+            continue;
+        }
+
+        // For bigrams, require at least 50% non-stopwords.
+        if len == 2 && (non_stop as f64 / len as f64) < 0.5 {
+            continue;
+        }
+
+        // Compute PMI.
+        let p_phrase = count as f64 / total_tokens_f;
+        if p_phrase == 0.0 {
+            continue;
+        }
+        let mut prod = 1.0;
+        let mut missing_uni = false;
+        for t in &tokens {
+            let Some(&c) = unigram_counts.get(*t) else {
+                missing_uni = true;
+                break;
+            };
+            prod *= (c as f64) / total_tokens_f;
+        }
+        if missing_uni || prod == 0.0 {
+            continue;
+        }
+        let pmi = (p_phrase / prod).log2();
+        if !(len >= 4 && count >= 2) && pmi < PMI_THRESHOLD {
+            continue;
+        }
+
+        let phrase = tokens.join(" ");
+        let score = pmi * (count as f64) * (len as f64).powf(2.0);
+        records.push(PhraseRecord {
+            phrase,
+            count,
+            len,
+            tokens: tokens.into_iter().map(String::from).collect(),
+            score,
+        });
+    }
+
+    records.sort_by(|a, b| {
+        b.len
+            .cmp(&a.len)
+            .then_with(|| {
+                b.score
+                    .partial_cmp(&a.score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .then_with(|| b.count.cmp(&a.count))
+            .then_with(|| a.phrase.cmp(&b.phrase))
+    });
+
+    suppress_subphrases(records, take * 5)
         .into_iter()
-        .map(|(label, value)| Count { label, value })
-        .collect();
-    items.sort_by_key(|c| std::cmp::Reverse(c.value));
-    items.truncate(take);
-    items
+        .take(take)
+        .map(|r| Count {
+            label: r.phrase,
+            value: r.count,
+        })
+        .collect()
 }
 
 fn per_person_phrases(messages: &[Message], take: usize, _filter_stop: bool) -> Vec<PersonPhrases> {
+    // Scale minimum count with corpus size
+    let min_count: u32 = if messages.len() > 100000 {
+        5
+    } else if messages.len() > 10000 {
+        3
+    } else {
+        1
+    };
     let stop = stopwords_set();
-    let mut map: HashMap<String, HashMap<String, u32>> = HashMap::new();
+    let mut map: HashMap<String, HashMap<String, (u32, usize, Vec<String>)>> = HashMap::new();
 
     for m in messages {
         if is_media_omitted_message(&m.text) {
             continue;
         }
-        // Keep stop-words in phrases so the full expression stays intact.
-        let tokens = tokenize(&m.text, false, &stop);
+        let tokens = tokenize(&m.text, false, stop);
         if tokens.len() < 2 {
             continue;
         }
@@ -946,9 +1347,35 @@ fn per_person_phrases(messages: &[Message], take: usize, _filter_stop: bool) -> 
                 if slice.iter().all(|t| t.is_empty()) {
                     continue;
                 }
+                let stop_count = slice.iter().filter(|t| stop.contains(t.as_str())).count();
+                let non_stop = window - stop_count;
+                if non_stop == 0 {
+                    continue;
+                }
+
+                let (alpha, numeric) = tokens_alpha_numeric_stats(slice);
+                if alpha == 0 {
+                    continue;
+                }
+                let numeric_ratio = numeric as f64 / slice.len() as f64;
+                if numeric_ratio > 0.5 {
+                    continue;
+                }
+
+                let non_stop_ratio = non_stop as f64 / window as f64;
+                if window == 2 && non_stop_ratio < 0.5 {
+                    continue;
+                }
+
                 let phrase = slice.join(" ");
                 let entry = map.entry(m.sender.clone()).or_default();
-                *entry.entry(phrase).or_insert(0u32) += 1;
+                let val = entry.entry(phrase.clone()).or_insert((
+                    0u32,
+                    window,
+                    slice.iter().map(|t| t.to_string()).collect(),
+                ));
+                val.0 += 1;
+                val.1 = val.1.max(window);
             }
         }
     }
@@ -956,13 +1383,61 @@ fn per_person_phrases(messages: &[Message], take: usize, _filter_stop: bool) -> 
     let mut res: Vec<PersonPhrases> = map
         .into_iter()
         .map(|(name, phrases)| {
-            let mut items: Vec<_> = phrases
+            let mut records: Vec<PhraseRecord> = Vec::new();
+            for (label, (value, len, tokens)) in phrases.into_iter() {
+                // Skip rare phrases early.
+                if value < min_count {
+                    continue;
+                }
+                let (_stop_count, non_stop) = tokens_stop_stats(&tokens, stop);
+                if non_stop == 0 {
+                    continue;
+                }
+                let (alpha, numeric) = tokens_alpha_numeric_stats(&tokens);
+                if alpha == 0 {
+                    continue;
+                }
+                let numeric_ratio = if tokens.is_empty() {
+                    0.0
+                } else {
+                    numeric as f64 / tokens.len() as f64
+                };
+                if numeric_ratio > 0.5 {
+                    continue;
+                }
+                let non_stop_ratio = non_stop as f64 / len as f64;
+                if len == 2 && non_stop_ratio < 0.5 {
+                    continue;
+                }
+                let score = (value as f64) * (len as f64).powf(1.6) * non_stop_ratio.max(0.3);
+                records.push(PhraseRecord {
+                    phrase: label,
+                    count: value,
+                    len,
+                    tokens,
+                    score,
+                });
+            }
+
+            records.sort_by(|a, b| {
+                b.score
+                    .partial_cmp(&a.score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| b.count.cmp(&a.count))
+                    .then_with(|| b.len.cmp(&a.len))
+                    .then_with(|| a.phrase.cmp(&b.phrase))
+            });
+
+            let phrases = suppress_subphrases(records, take * 5)
                 .into_iter()
-                .map(|(label, value)| Count { label, value })
+                .take(take)
+                .map(|r| Count {
+                    label: r.phrase,
+                    value: r.count,
+                })
                 .collect();
-            items.sort_by_key(|c| std::cmp::Reverse(c.value));
-            items.truncate(take);
-            PersonPhrases { name, phrases: items }
+
+            PersonPhrases { name, phrases }
         })
         .collect();
 
@@ -1237,40 +1712,198 @@ pub fn analyze_chat(raw: &str, top_words_n: u32, top_emojis_n: u32) -> Result<Js
     serde_wasm_bindgen::to_value(&summary).map_err(|e| JsValue::from_str(&e.to_string()))
 }
 
+/// Non-WASM version for benchmarking. Returns JSON string.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn analyze_chat_native(
+    raw: &str,
+    top_words_n: usize,
+    top_emojis_n: usize,
+) -> Result<String, String> {
+    let summary = summarize(raw, top_words_n, top_emojis_n)?;
+    serde_json::to_string(&summary).map_err(|e| e.to_string())
+}
+
 fn summarize(raw: &str, top_words_n: usize, top_emojis_n: usize) -> Result<Summary, String> {
+    #[cfg(all(target_arch = "wasm32", feature = "timing"))]
+    let t0 = perf_now();
+
     let messages = parse_messages(raw);
+    #[cfg(all(target_arch = "wasm32", feature = "timing"))]
+    log_step!("parse_messages", t0);
+
     if messages.is_empty() {
         return Err("No messages parsed".into());
     }
 
+    #[cfg(all(target_arch = "wasm32", feature = "timing"))]
+    let t1 = perf_now();
     let (del_you, del_others) = deleted_counts(&messages);
+    #[cfg(all(target_arch = "wasm32", feature = "timing"))]
+    log_step!("deleted_counts", t1);
+
+    #[cfg(all(target_arch = "wasm32", feature = "timing"))]
+    let t2 = perf_now();
     let (conversation_starters, conversation_count) = conversation_initiations(&messages);
+    #[cfg(all(target_arch = "wasm32", feature = "timing"))]
+    log_step!("conversation_initiations", t2);
+
+    #[cfg(all(target_arch = "wasm32", feature = "timing"))]
+    let t3 = perf_now();
     let (sentiment_by_day, sentiment_overall) = sentiment_breakdown(&messages);
+    #[cfg(all(target_arch = "wasm32", feature = "timing"))]
+    log_step!("sentiment_breakdown", t3);
+
+    // Note: filter_stop is currently unused in top_phrases and per_person_phrases, so we reuse results.
+    #[cfg(all(target_arch = "wasm32", feature = "timing"))]
+    let t4 = perf_now();
+    let word_cloud_val = word_cloud(&messages, 150, true);
+    #[cfg(all(target_arch = "wasm32", feature = "timing"))]
+    log_step!("word_cloud(filter=true)", t4);
+
+    #[cfg(all(target_arch = "wasm32", feature = "timing"))]
+    let t5 = perf_now();
+    let word_cloud_no_stop_val = word_cloud(&messages, 150, false);
+    #[cfg(all(target_arch = "wasm32", feature = "timing"))]
+    log_step!("word_cloud(filter=false)", t5);
+
+    #[cfg(all(target_arch = "wasm32", feature = "timing"))]
+    let t6 = perf_now();
+    let salient_phrases_val = salient_phrases(&messages, 50);
+    #[cfg(all(target_arch = "wasm32", feature = "timing"))]
+    log_step!("salient_phrases", t6);
+
+    #[cfg(all(target_arch = "wasm32", feature = "timing"))]
+    let t7 = perf_now();
+    let top_phrases_val = top_phrases(&messages, 100, true);
+    #[cfg(all(target_arch = "wasm32", feature = "timing"))]
+    log_step!("top_phrases", t7);
+
+    let top_phrases_no_stop_val = top_phrases_val.clone();
+
+    #[cfg(all(target_arch = "wasm32", feature = "timing"))]
+    let t8 = perf_now();
+    let per_person_phrases_val = per_person_phrases(&messages, 20, true);
+    #[cfg(all(target_arch = "wasm32", feature = "timing"))]
+    log_step!("per_person_phrases", t8);
+
+    let per_person_phrases_no_stop_val = per_person_phrases_val.clone();
+
+    #[cfg(all(target_arch = "wasm32", feature = "timing"))]
+    let t9 = perf_now();
+    let person_stats_val = person_stats(&messages);
+    #[cfg(all(target_arch = "wasm32", feature = "timing"))]
+    log_step!("person_stats", t9);
+
+    #[cfg(all(target_arch = "wasm32", feature = "timing"))]
+    let t10 = perf_now();
+    let by_sender = count_by_sender(&messages);
+    #[cfg(all(target_arch = "wasm32", feature = "timing"))]
+    log_step!("count_by_sender", t10);
+
+    #[cfg(all(target_arch = "wasm32", feature = "timing"))]
+    let t11 = perf_now();
+    let daily = daily_counts(&messages);
+    #[cfg(all(target_arch = "wasm32", feature = "timing"))]
+    log_step!("daily_counts", t11);
+
+    #[cfg(all(target_arch = "wasm32", feature = "timing"))]
+    let t12 = perf_now();
+    let hourly = hourly_counts(&messages);
+    #[cfg(all(target_arch = "wasm32", feature = "timing"))]
+    log_step!("hourly_counts", t12);
+
+    #[cfg(all(target_arch = "wasm32", feature = "timing"))]
+    let t13 = perf_now();
+    let top_emojis_val = top_emojis(&messages, top_emojis_n);
+    #[cfg(all(target_arch = "wasm32", feature = "timing"))]
+    log_step!("top_emojis", t13);
+
+    #[cfg(all(target_arch = "wasm32", feature = "timing"))]
+    let t14 = perf_now();
+    let top_words_val = top_words(&messages, top_words_n, true);
+    #[cfg(all(target_arch = "wasm32", feature = "timing"))]
+    log_step!("top_words(filter=true)", t14);
+
+    #[cfg(all(target_arch = "wasm32", feature = "timing"))]
+    let t15 = perf_now();
+    let top_words_no_stop_val = top_words(&messages, top_words_n, false);
+    #[cfg(all(target_arch = "wasm32", feature = "timing"))]
+    log_step!("top_words(filter=false)", t15);
+
+    #[cfg(all(target_arch = "wasm32", feature = "timing"))]
+    let t16 = perf_now();
+    let timeline_val = timeline(&messages);
+    #[cfg(all(target_arch = "wasm32", feature = "timing"))]
+    log_step!("timeline", t16);
+
+    #[cfg(all(target_arch = "wasm32", feature = "timing"))]
+    let t17 = perf_now();
+    let weekly = weekly_counts(&messages);
+    #[cfg(all(target_arch = "wasm32", feature = "timing"))]
+    log_step!("weekly_counts", t17);
+
+    #[cfg(all(target_arch = "wasm32", feature = "timing"))]
+    let t18 = perf_now();
+    let monthly = monthly_counts(&messages);
+    #[cfg(all(target_arch = "wasm32", feature = "timing"))]
+    log_step!("monthly_counts", t18);
+
+    #[cfg(all(target_arch = "wasm32", feature = "timing"))]
+    let t19 = perf_now();
+    let buckets = buckets_by_person(&messages);
+    #[cfg(all(target_arch = "wasm32", feature = "timing"))]
+    log_step!("buckets_by_person", t19);
+
+    #[cfg(all(target_arch = "wasm32", feature = "timing"))]
+    let t20 = perf_now();
+    let emoji_cloud_val = emoji_cloud(&messages, 1000);
+    #[cfg(all(target_arch = "wasm32", feature = "timing"))]
+    log_step!("emoji_cloud", t20);
+
+    #[cfg(all(target_arch = "wasm32", feature = "timing"))]
+    let t21 = perf_now();
+    let fun_facts_val = fun_facts(&messages);
+    #[cfg(all(target_arch = "wasm32", feature = "timing"))]
+    log_step!("fun_facts", t21);
+
+    #[cfg(all(target_arch = "wasm32", feature = "timing"))]
+    let t22 = perf_now();
+    let per_person_daily_val = per_person_daily(&messages);
+    #[cfg(all(target_arch = "wasm32", feature = "timing"))]
+    log_step!("per_person_daily", t22);
+
+    #[cfg(all(target_arch = "wasm32", feature = "timing"))]
+    {
+        let total = perf_now() - t0;
+        web_sys::console::log_1(&format!("[wasm] summarize total: {:.1}ms", total).into());
+    }
+
     Ok(Summary {
         total_messages: messages.len(),
-        by_sender: count_by_sender(&messages),
-        daily: daily_counts(&messages),
-        hourly: hourly_counts(&messages),
-        top_emojis: top_emojis(&messages, top_emojis_n),
-        top_words: top_words(&messages, top_words_n, true),
-        top_words_no_stop: top_words(&messages, top_words_n, false),
+        by_sender,
+        daily,
+        hourly,
+        top_emojis: top_emojis_val,
+        top_words: top_words_val,
+        top_words_no_stop: top_words_no_stop_val,
         deleted_you: del_you,
         deleted_others: del_others,
-        timeline: timeline(&messages),
-        weekly: weekly_counts(&messages),
-        monthly: monthly_counts(&messages),
+        timeline: timeline_val,
+        weekly,
+        monthly,
         share_of_speech: count_by_sender(&messages),
-        buckets_by_person: buckets_by_person(&messages),
-        word_cloud: word_cloud(&messages, 150, true),
-        word_cloud_no_stop: word_cloud(&messages, 150, false),
-        emoji_cloud: emoji_cloud(&messages, 1000),
-        top_phrases: top_phrases(&messages, 100, true),
-        top_phrases_no_stop: top_phrases(&messages, 100, false),
-        per_person_phrases: per_person_phrases(&messages, 20, true),
-        per_person_phrases_no_stop: per_person_phrases(&messages, 20, false),
-        fun_facts: fun_facts(&messages),
-        person_stats: person_stats(&messages),
-        per_person_daily: per_person_daily(&messages),
+        buckets_by_person: buckets,
+        word_cloud: word_cloud_val,
+        word_cloud_no_stop: word_cloud_no_stop_val,
+        emoji_cloud: emoji_cloud_val,
+        salient_phrases: salient_phrases_val,
+        top_phrases: top_phrases_val,
+        top_phrases_no_stop: top_phrases_no_stop_val,
+        per_person_phrases: per_person_phrases_val,
+        per_person_phrases_no_stop: per_person_phrases_no_stop_val,
+        fun_facts: fun_facts_val,
+        person_stats: person_stats_val,
+        per_person_daily: per_person_daily_val,
         sentiment_by_day,
         sentiment_overall,
         conversation_starters,
@@ -1292,7 +1925,7 @@ mod tests {
     }
 
     fn sample_chat() -> &'static str {
-        "[8/19/19, 5:04:35 PM] Addy: 😂😂 wow\n[8/19/19, 5:05:00 PM] Em: You deleted this message\n8/20/19, 7:00 AM - Addy: Another day\n8/21/19, 8:00 AM - Em: This message was deleted\n9/01/19, 9:00 AM - Addy: A fresh month"
+        "[8/19/19, 5:04:35 PM] Alice: 😂😂 wow\n[8/19/19, 5:05:00 PM] Bob: You deleted this message\n8/20/19, 7:00 AM - Alice: Another day\n8/21/19, 8:00 AM - Bob: This message was deleted\n9/01/19, 9:00 AM - Alice: A fresh month"
     }
 
     #[test]
@@ -1315,28 +1948,28 @@ mod tests {
         assert!(!summary.per_person_daily.is_empty());
         assert_eq!(summary.timeline[1].value, 1);
         assert_eq!(summary.conversation_count, 4);
-        assert_eq!(summary.conversation_starters[0].label, "Addy");
+        assert_eq!(summary.conversation_starters[0].label, "Alice");
         assert_eq!(summary.conversation_starters[0].value, 3);
     }
 
     #[test]
     fn person_stats_counts_words_and_emojis() {
-        let raw = "[8/19/19, 5:04:35 PM] Addy: Hello hello 😀\n8/19/19, 6:10 PM - Em: wow 😀 great";
+        let raw = "[8/19/19, 5:04:35 PM] Alice: Hello hello 😀\n8/19/19, 6:10 PM - Bob: wow 😀 great";
         let summary = summarize(raw, 10, 5).unwrap();
-        let addy = summary
+        let alice = summary
             .person_stats
             .iter()
-            .find(|p| p.name == "Addy")
-            .expect("has addy");
-        assert_eq!(addy.total_words, 2);
-        assert!(addy.top_emojis.iter().any(|e| e.label == "😀"));
-        let em = summary
+            .find(|p| p.name == "Alice")
+            .expect("has alice");
+        assert_eq!(alice.total_words, 2);
+        assert!(alice.top_emojis.iter().any(|e| e.label == "😀"));
+        let bob = summary
             .person_stats
             .iter()
-            .find(|p| p.name == "Em")
-            .expect("has em");
-        assert_eq!(em.total_words, 2);
-        assert!(em.top_emojis.iter().any(|e| e.label == "😀"));
+            .find(|p| p.name == "Bob")
+            .expect("has bob");
+        assert_eq!(bob.total_words, 2);
+        assert!(bob.top_emojis.iter().any(|e| e.label == "😀"));
     }
 
     #[test]
@@ -1381,26 +2014,26 @@ mod tests {
 
     #[test]
     fn person_stats_picks_dominant_color_case_insensitive() {
-        let raw = "[8/19/19, 5:04:35 PM] Addy: BLUE blue Blue rocks\n8/19/19, 6:10 PM - Em: green vibes and more green";
+        let raw = "[8/19/19, 5:04:35 PM] Alice: BLUE blue Blue rocks\n8/19/19, 6:10 PM - Bob: green vibes and more green";
         let summary = summarize(raw, 10, 5).unwrap();
-        let addy = summary
+        let alice = summary
             .person_stats
             .iter()
-            .find(|p| p.name == "Addy")
-            .expect("has addy");
-        let em = summary
+            .find(|p| p.name == "Alice")
+            .expect("has alice");
+        let bob = summary
             .person_stats
             .iter()
-            .find(|p| p.name == "Em")
-            .expect("has em");
+            .find(|p| p.name == "Bob")
+            .expect("has bob");
 
-        assert_eq!(addy.dominant_color.as_deref(), Some("#64d8ff"));
-        assert_eq!(em.dominant_color.as_deref(), Some("#06d6a0"));
+        assert_eq!(alice.dominant_color.as_deref(), Some("#64d8ff"));
+        assert_eq!(bob.dominant_color.as_deref(), Some("#06d6a0"));
     }
 
     #[test]
     fn top_words_respects_stopword_toggle() {
-        let raw = "[8/19/19, 5:04:35 PM] Addy: the the hello world";
+        let raw = "[8/19/19, 5:04:35 PM] Alice: the the hello world";
         let summary = summarize(raw, 10, 5).unwrap();
         let with_stop = summary
             .top_words
@@ -1440,6 +2073,66 @@ mod tests {
     }
 
     #[test]
+    fn collapses_overlapping_phrase_variants() {
+        let raw = "\
+[1/1/24, 1:00:00 PM] A: my love\n\
+[1/1/24, 1:01:00 PM] A: my love\n\
+[1/1/24, 1:02:00 PM] A: my love\n\
+[1/1/24, 1:03:00 PM] A: good job my love\n\
+[1/1/24, 1:04:00 PM] A: good job my love\n\
+[1/1/24, 1:05:00 PM] A: good job my love\n\
+[1/1/24, 1:06:00 PM] A: job my love\n\
+[1/1/24, 1:07:00 PM] A: job my love\n\
+[1/1/24, 1:08:00 PM] A: good job\n\
+[1/1/24, 1:09:00 PM] A: good job\n\
+[1/1/24, 1:10:00 PM] A: good job my";
+
+        let summary = summarize(raw, 10, 5).unwrap();
+        let variants = [
+            "my love",
+            "good job",
+            "job my love",
+            "good job my",
+            "good job my love",
+        ];
+
+        let matches: Vec<&Count> = summary
+            .top_phrases
+            .iter()
+            .filter(|c| variants.contains(&c.label.as_str()))
+            .collect();
+
+        assert_eq!(matches.len(), 1, "variants should collapse to one phrase");
+        assert_eq!(matches[0].label, "good job my love");
+        assert!(matches[0].value >= 3);
+    }
+
+    #[test]
+    fn heart_shortcuts_are_not_stripped_to_numbers() {
+        let raw = "\
+[1/1/24, 1:00:00 PM] A: good job my love <3\n\
+[1/1/24, 1:01:00 PM] A: good job my love <333\n\
+[1/1/24, 1:02:00 PM] A: my love <3";
+
+        let summary = summarize(raw, 10, 5).unwrap();
+        let words: Vec<&str> = summary
+            .top_words_no_stop
+            .iter()
+            .map(|c| c.label.as_str())
+            .collect();
+        assert!(words.contains(&"<3"));
+        assert!(!words.contains(&"3"));
+
+        let phrases: Vec<&str> = summary
+            .top_phrases
+            .iter()
+            .map(|c| c.label.as_str())
+            .collect();
+        assert!(phrases.iter().any(|p| p.contains("<3")));
+        assert!(!phrases.iter().any(|p| p.ends_with(" 3")));
+    }
+
+    #[test]
     fn phrases_ignore_urls() {
         let raw = "[1/1/24, 1:00:00 PM] A: check https://www.google.com later\n[1/1/24, 1:01:00 PM] A: check https://www.google.com later";
         let summary = summarize(raw, 10, 5).unwrap();
@@ -1457,7 +2150,8 @@ mod tests {
 
     #[test]
     fn media_omitted_messages_do_not_count_for_words_or_phrases() {
-        let raw = "[1/1/24, 1:00:00 PM] A: <Media omitted>\n[1/1/24, 1:01:00 PM] A: hello world again";
+        let raw =
+            "[1/1/24, 1:00:00 PM] A: <Media omitted>\n[1/1/24, 1:01:00 PM] A: hello world again";
         let summary = summarize(raw, 10, 5).unwrap();
 
         let words_no_stop: Vec<&str> = summary
@@ -1487,8 +2181,19 @@ mod tests {
     }
 
     #[test]
+    fn salient_phrases_surface_surprising_pairs() {
+        let raw = "[1/1/24, 1:00:00 PM] A: i think we should go\n[1/1/24, 1:01:00 PM] A: i think it works\n[1/1/24, 1:02:00 PM] A: i think so too\n[1/1/24, 1:03:00 PM] A: quantum entanglement is wild\n[1/1/24, 1:04:00 PM] A: quantum entanglement feels magical\n[1/1/24, 1:05:00 PM] A: quantum entanglement again";
+        let summary = summarize(raw, 10, 5).unwrap();
+
+        assert!(summary.salient_phrases.len() >= 1);
+        // Rare but repeated technical phrase should outrank common filler.
+        assert_eq!(summary.salient_phrases[0].label, "quantum entanglement");
+    }
+
+    #[test]
     fn per_person_phrases_tracked() {
-        let raw = "[1/1/24, 1:00:00 PM] A: hello world\n[1/1/24, 1:01:00 PM] B: different phrase here";
+        let raw =
+            "[1/1/24, 1:00:00 PM] A: hello world\n[1/1/24, 1:01:00 PM] B: different phrase here";
         let summary = summarize(raw, 10, 5).unwrap();
 
         let a = summary
@@ -1508,8 +2213,8 @@ mod tests {
 
     #[test]
     fn conversation_starters_respect_gap() {
-        // Two conversations separated by > 30 minutes; initiators should be Addy then Em.
-        let raw = "[8/19/19, 5:00:00 PM] Addy: Hi\n[8/19/19, 5:10:00 PM] Em: ok\n[8/19/19, 6:00:01 PM] Em: New convo\n[8/19/19, 6:05:00 PM] Addy: reply";
+        // Two conversations separated by > 30 minutes; initiators should be Alice then Em.
+        let raw = "[8/19/19, 5:00:00 PM] Alice: Hi\n[8/19/19, 5:10:00 PM] Bob: ok\n[8/19/19, 6:00:01 PM] Bob: New convo\n[8/19/19, 6:05:00 PM] Alice: reply";
         let summary = summarize(raw, 5, 5).unwrap();
         assert_eq!(summary.conversation_count, 2);
         let starters = summary
@@ -1517,8 +2222,8 @@ mod tests {
             .iter()
             .map(|c| (c.label.as_str(), c.value))
             .collect::<std::collections::HashMap<_, _>>();
-        assert_eq!(starters.get("Addy"), Some(&1));
-        assert_eq!(starters.get("Em"), Some(&1));
+        assert_eq!(starters.get("Alice"), Some(&1));
+        assert_eq!(starters.get("Bob"), Some(&1));
     }
 
     #[test]
@@ -1564,6 +2269,25 @@ mod tests {
     }
 
     #[test]
+    fn security_code_banners_are_filtered_even_with_sender() {
+        let raw = "\
+[1/1/24, 1:00:00 PM] A: hello there\n\
+[1/1/24, 1:01:00 PM] A: Your security code with Bob changed. Tap to learn more.\n\
+[1/1/24, 1:02:00 PM] B: hi";
+
+        let messages = parse_messages(raw);
+        assert_eq!(
+            messages.len(),
+            2,
+            "system-like security code banner should be dropped"
+        );
+
+        let summary = summarize(raw, 10, 5).unwrap();
+        assert_eq!(summary.total_messages, 2);
+        assert_eq!(summary.by_sender.len(), 2);
+    }
+
+    #[test]
     fn color_tie_break_is_alphabetical() {
         let raw = "[8/19/19, 5:00:00 PM] A: red red\n[8/19/19, 5:01:00 PM] A: blue blue";
         let summary = summarize(raw, 5, 5).unwrap();
@@ -1579,18 +2303,18 @@ mod tests {
     #[test]
     fn sentiment_is_computed() {
         let raw =
-            "[8/19/19, 5:04:35 PM] Addy: I love this!\n8/20/19, 7:00 AM - Em: this is terrible";
+            "[8/19/19, 5:04:35 PM] Alice: I love this!\n8/20/19, 7:00 AM - Bob: this is terrible";
         let summary = summarize(raw, 5, 5).unwrap();
         assert!(!summary.sentiment_by_day.is_empty());
         assert!(!summary.sentiment_overall.is_empty());
         assert!(summary
             .sentiment_overall
             .iter()
-            .any(|s| s.name == "Addy" && s.mean > 0.0));
+            .any(|s| s.name == "Alice" && s.mean > 0.0));
         assert!(summary
             .sentiment_overall
             .iter()
-            .any(|s| s.name == "Em" && s.mean < 0.0));
+            .any(|s| s.name == "Bob" && s.mean < 0.0));
     }
 
     #[test]

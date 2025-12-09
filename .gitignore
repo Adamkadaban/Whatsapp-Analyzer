@@ -20,6 +20,8 @@ debug/
 
 # don't commit chats to github
 /data
+*.txt
+!vitest.setup.ts
 # local reference materials and sample exports
 /references/
 /samples/

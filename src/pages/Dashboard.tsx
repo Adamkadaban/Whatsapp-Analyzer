@@ -8,6 +8,14 @@ import PieTooltip, { type SenderDatum } from "../components/PieTooltip";
 import StatCard from "../components/StatCard";
 import { analyzeText, type Summary } from "../lib/wasm";
 
+// Enable performance timing logs only in dev mode.
+const DEBUG_TIMING = import.meta.env.DEV;
+function logTiming(label: string, data: Record<string, unknown>) {
+  if (DEBUG_TIMING) {
+    console.info(label, data);
+  }
+}
+
 type DailyStackDatum = Record<string, number | string>;
 
 const colors = ["#64d8ff", "#ff7edb", "#8c7bff", "#7cf9c0", "#ffb347", "#ff6b6b", "#ffd166", "#06d6a0", "#118ab2", "#ef476f"];
@@ -418,6 +426,9 @@ export default function Dashboard() {
     const files = Array.from(fileList);
     if (!files.length) return;
 
+    const processStart = performance.now();
+    logTiming("[analysis] processFiles start", { fileCount: files.length, names: files.map((f) => f.name) });
+
     setError(null);
     setPendingSummary(null);
     setSummary(null);
@@ -426,10 +437,11 @@ export default function Dashboard() {
     setProcessing(true);
     setAnalyzing(false);
 
+    const texts: string[] = [];
+    const labels: string[] = [];
+    const skipped: string[] = [];
+
     try {
-      const texts: string[] = [];
-      const labels: string[] = [];
-      const skipped: string[] = [];
 
       const pushText = (name: string, text: string) => {
         const cleaned = stripInvisibles(text);
@@ -444,16 +456,21 @@ export default function Dashboard() {
       for (const file of files) {
         const displayName = file.name;
         const lower = displayName.toLowerCase();
+        const fileStart = performance.now();
 
         try {
           if (lower.endsWith(".zip")) {
+            const zipStart = performance.now();
             const { texts: zipTexts, names } = await extractZipText(file);
             zipTexts.forEach((t, idx) => pushText(`${displayName}:${names[idx]}`, t));
             labels.push(`${displayName} (${names.length} txt)`);
+            logTiming("[analysis] zip processed", { name: displayName, entries: names.length, ms: Number((performance.now() - zipStart).toFixed(1)) });
           } else if (lower.endsWith(".txt")) {
+            const decodeStart = performance.now();
             const decoded = await readTextWithFallback(file);
             if (decoded) {
               pushText(displayName, decoded.text);
+              logTiming("[analysis] txt processed", { name: displayName, encoding: decoded.encoding, chars: decoded.text.length, ms: Number((performance.now() - decodeStart).toFixed(1)) });
             } else {
               skipped.push(`${displayName} (unreadable text; tried utf-8/utf-16)`);
             }
@@ -464,6 +481,8 @@ export default function Dashboard() {
           const reason = err instanceof Error ? err.name || err.message : "unknown error";
           skipped.push(`${displayName} (failed to read: ${reason})`);
           console.error("Failed to read file", displayName, err);
+        } finally {
+          logTiming("[analysis] file processed", { name: displayName, ms: Number((performance.now() - fileStart).toFixed(1)) });
         }
       }
 
@@ -472,8 +491,13 @@ export default function Dashboard() {
         throw new Error(`No text found. Upload one or more .txt files or a .zip containing .txt exports.${detail}`);
       }
 
+      const combineStart = performance.now();
       const combinedText = texts.join("\n");
+      logTiming("[analysis] combined text", { length: combinedText.length, sources: texts.length, ms: Number((performance.now() - combineStart).toFixed(1)) });
+
+      const analyzeStart = performance.now();
       const res = await analyzeText(combinedText);
+      logTiming("[analysis] analyzeText finished", { ms: Number((performance.now() - analyzeStart).toFixed(1)) });
       setPendingSummary(res);
       setFileName(labels.join(", "));
 
@@ -487,6 +511,7 @@ export default function Dashboard() {
       setFileName(null);
       setFileCount(0);
     } finally {
+      logTiming("[analysis] processFiles finished", { ms: Number((performance.now() - processStart).toFixed(1)), kept: texts.length, skipped: skipped.length });
       setProcessing(false);
     }
   }

@@ -1,6 +1,6 @@
 export const topSenders = [
-  { name: "Addy", value: 4321 },
-  { name: "Em", value: 3890 },
+  { name: "Alice", value: 4321 },
+  { name: "Bob", value: 3890 },
   { name: "Family", value: 2150 },
   { name: "Work", value: 1220 },
 ];

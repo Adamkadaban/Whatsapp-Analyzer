@@ -301,13 +301,13 @@ mod tests {
     #[test]
     fn parses_bracket_and_hyphen_and_multiline() {
         let chat =
-            "[8/19/19, 5:04:35 PM] Addy: Hello\ncontinued line\n8/19/19, 6:10 PM - Em: Hi back";
+            "[8/19/19, 5:04:35 PM] Alice: Hello\ncontinued line\n8/19/19, 6:10 PM - Bob: Hi back";
         let (_tmp, path) = write_chat(chat);
         let msgs = parse_whatsapp_file(&path).unwrap();
         assert_eq!(msgs.len(), 2);
-        assert_eq!(msgs[0].sender, "Addy");
+        assert_eq!(msgs[0].sender, "Alice");
         assert!(msgs[0].text.contains("continued line"));
-        assert_eq!(msgs[1].sender, "Em");
+        assert_eq!(msgs[1].sender, "Bob");
     }
 
     #[test]
@@ -320,7 +320,7 @@ mod tests {
 
     #[test]
     fn aggregations_cover_sender_day_hour() {
-        let chat = "[8/19/19, 5:04:35 PM] Addy: One\n[8/19/19, 6:04:35 PM] Em: Two\n8/20/19, 7:00 AM - Addy: Three";
+        let chat = "[8/19/19, 5:04:35 PM] Alice: One\n[8/19/19, 6:04:35 PM] Bob: Two\n8/20/19, 7:00 AM - Alice: Three";
         let (_tmp, path) = write_chat(chat);
         let msgs = parse_whatsapp_file(&path).unwrap();
         let df = as_dataframe(&msgs).unwrap();
@@ -342,7 +342,7 @@ mod tests {
 
     #[test]
     fn emoji_word_and_deleted_counts() {
-        let chat = "[8/19/19, 5:04:35 PM] Addy: 😂😂 wow\n[8/19/19, 5:05:00 PM] Em: You deleted this message\n8/19/19, 5:06 PM - Addy: This message was deleted\n8/19/19, 5:07 PM - Em: Amazing work";
+        let chat = "[8/19/19, 5:04:35 PM] Alice: 😂😂 wow\n[8/19/19, 5:05:00 PM] Bob: You deleted this message\n8/19/19, 5:06 PM - Alice: This message was deleted\n8/19/19, 5:07 PM - Bob: Amazing work";
         let (_tmp, path) = write_chat(chat);
         let msgs = parse_whatsapp_file(&path).unwrap();
 
@@ -366,7 +366,7 @@ mod tests {
 
     #[test]
     fn parse_file_tolerates_noise_and_empty() {
-        let chat = "noise line that should be ignored\n\n[8/19/19, 5:04:35 PM] Addy: Hello";
+        let chat = "noise line that should be ignored\n\n[8/19/19, 5:04:35 PM] Alice: Hello";
         let (_tmp, path) = write_chat(chat);
         let msgs = parse_whatsapp_file(&path).unwrap();
         assert_eq!(msgs.len(), 1);
@@ -398,7 +398,7 @@ mod tests {
 
     #[test]
     fn run_executes_end_to_end() {
-        let chat = "[8/19/19, 5:04:35 PM] Addy: Hello there\n8/19/19, 5:06 PM - Em: Another line";
+        let chat = "[8/19/19, 5:04:35 PM] Alice: Hello there\n8/19/19, 5:06 PM - Bob: Another line";
         let (_tmp, path) = write_chat(chat);
         let args = Args {
             input: path,

@@ -40,6 +40,34 @@ export default function Landing() {
           </div>
         </div>
       </section>
+      <section
+        className="container"
+        style={{
+          padding: "32px 16px",
+          gap: "16px",
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+        }}
+      >
+        <div>
+          <h2 style={{ marginBottom: 8 }}>Export on iPhone</h2>
+          <ol style={{ lineHeight: 1.6, paddingLeft: 20 }}>
+            <li>Open the chat, tap its name to enter Chat Info.</li>
+            <li>Scroll to the bottom, tap <strong>Export Chat</strong>.</li>
+            <li>Choose <strong>Without Media</strong> and save/share the TXT.</li>
+          </ol>
+        </div>
+        <div>
+          <h2 style={{ marginBottom: 8 }}>Export on Android</h2>
+          <ol style={{ lineHeight: 1.6, paddingLeft: 20 }}>
+            <li>Open the chat, tap &middot;&middot;&middot; &rarr; More &rarr; Export chat.</li>
+            <li>Pick <strong>Without Media</strong> to keep the file small.</li>
+            <li>
+              Share or save the TXT, then drop it <Link to="/dashboard">here</Link> to analyze.
+            </li>
+          </ol>
+        </div>
+      </section>
     </main>
   );
 }
