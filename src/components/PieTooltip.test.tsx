@@ -12,7 +12,7 @@ describe("PieTooltip", () => {
       percent: 0.6,
       payload: { name: "Alice", value: 120 },
     },
-  ] as Payload;
+  ] as unknown as Payload;
 
   it("renders name and message count with white text", () => {
     render(<PieTooltip active payload={payload} />);
