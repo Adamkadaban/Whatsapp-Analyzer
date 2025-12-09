@@ -1469,7 +1469,11 @@ fn per_person_phrases(messages: &[Message], take: usize, _filter_stop: bool) -> 
                     label: r.phrase,
                     value: r.count,
                 })
-                .collect();
+                .collect::<Vec<_>>();
+
+            // Re-sort final phrases by count descending for display consistency
+            let mut phrases = phrases;
+            phrases.sort_by(|a, b| b.value.cmp(&a.value));
 
             PersonPhrases { name, phrases }
         })
