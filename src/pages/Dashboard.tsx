@@ -791,8 +791,8 @@ export default function Dashboard() {
             <div className="card" style={{ display: "grid", gap: 12 }}>
               <div className="tag">People</div>
               <h3 style={{ margin: 0 }}>Per-person stats</h3>
-              <div>
-                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 600 }}>
                   <thead>
                     <tr style={{ color: "var(--muted)", textAlign: "left" }}>
                       <th style={{ padding: "8px 6px" }}>Person</th>

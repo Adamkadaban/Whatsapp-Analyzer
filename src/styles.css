@@ -19,11 +19,20 @@
 
 body {
   margin: 0;
+  background: var(--bg);
+  min-height: 100vh;
+}
+
+/* Use a pseudo-element for the gradient so it covers the full scrollable area */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
   background: radial-gradient(circle at 20% 20%, rgba(100, 216, 255, 0.1), transparent 25%),
     radial-gradient(circle at 80% 0%, rgba(255, 126, 219, 0.12), transparent 30%),
-    radial-gradient(circle at 30% 80%, rgba(142, 108, 255, 0.08), transparent 30%),
-    var(--bg);
-  min-height: 100vh;
+    radial-gradient(circle at 30% 80%, rgba(142, 108, 255, 0.08), transparent 30%);
+  pointer-events: none;
+  z-index: -1;
 }
 
 .export-banner {
@@ -319,5 +328,53 @@ section {
 
   .navbar {
     padding: 16px 16px;
+  }
+
+  .stat-grid {
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  }
+
+  .chart-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .feature-grid {
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  }
+
+  .card {
+    padding: 16px;
+  }
+}
+
+@media (max-width: 480px) {
+  section {
+    padding: 40px 12px;
+  }
+
+  .navbar {
+    padding: 12px 12px;
+  }
+
+  .stat-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .hero h1 {
+    font-size: 28px;
+  }
+
+  .hero p {
+    font-size: 16px;
+  }
+
+  .card {
+    padding: 14px;
+    border-radius: 14px;
+  }
+
+  .btn {
+    padding: 12px 16px;
+    font-size: 14px;
   }
 }
