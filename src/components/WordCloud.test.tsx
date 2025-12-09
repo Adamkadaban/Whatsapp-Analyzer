@@ -34,8 +34,9 @@ beforeAll(() => {
       this.callback = callback;
     }
     observe(target: Element) {
-      this.callback([{ target } as ResizeObserverEntry], this);
+      this.callback([{ target } as ResizeObserverEntry], this as unknown as ResizeObserver);
     }
+    unobserve() {}
     disconnect() {}
   }
   (globalThis as any).ResizeObserver = ResizeObserverMock;

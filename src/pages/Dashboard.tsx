@@ -595,12 +595,13 @@ export default function Dashboard() {
           if (el.classList?.contains("export-hide")) return false;
           return true;
         },
-        onClone: (clonedDoc) => {
+        // onClone is an undocumented but functional option in html-to-image
+        onClone: (clonedDoc: Document) => {
           clonedDoc.querySelectorAll(".export-banner").forEach((el) => {
             (el as HTMLElement).style.display = "inline-flex";
           });
         },
-      });
+      } as Parameters<typeof toPng>[1] & { onClone?: (doc: Document) => void });
 
       const { width, height } = node.getBoundingClientRect();
       const orientation = width >= height ? "landscape" : "portrait";
@@ -803,7 +804,7 @@ export default function Dashboard() {
                     </tr>
                   </thead>
                   <tbody>
-                    {summary.person_stats.map((p, idx) => (
+                    {summary?.person_stats.map((p, idx) => (
                       <tr key={p.name} style={{ background: idx % 2 === 0 ? "rgba(255,255,255,0.02)" : "transparent" }}>
                         <td style={{ padding: "8px 6px", fontWeight: 600 }}>{p.name}</td>
                         <td style={{ padding: "8px 6px" }}>{p.total_words.toLocaleString()}</td>
@@ -854,7 +855,7 @@ export default function Dashboard() {
                       <XAxis dataKey="hour" tickFormatter={(v) => `${v}:00`} tick={{ fill: "var(--muted)", fontSize: 12 }} axisLine={false} tickLine={false} />
                       <YAxis tick={{ fill: "var(--muted)", fontSize: 12 }} axisLine={false} tickLine={false} />
                       <Tooltip contentStyle={{ background: "#0a0b0f", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 12 }} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
-                      {summary.buckets_by_person.map((p, idx) => (
+                      {summary?.buckets_by_person.map((p, idx) => (
                         <Bar key={p.name} dataKey={p.name} radius={[6, 6, 0, 0]} fill={getColor(p.name, idx)} />
                       ))}
                       <Legend />
@@ -905,7 +906,7 @@ export default function Dashboard() {
                       <PolarGrid stroke="rgba(255,255,255,0.08)" />
                       <PolarAngleAxis dataKey="label" tick={{ fill: "var(--muted)", fontSize: 12 }} />
                       <Tooltip contentStyle={{ background: "#0a0b0f", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 12 }} />
-                      {summary.buckets_by_person.map((p, idx) => {
+                      {summary?.buckets_by_person.map((p, idx) => {
                         const c = getColor(p.name, idx);
                         return <Radar key={p.name} name={p.name} dataKey={p.name} stroke={c} fill={c} fillOpacity={0.35} />;
                       })}
@@ -922,7 +923,7 @@ export default function Dashboard() {
                       <PolarGrid stroke="rgba(255,255,255,0.08)" />
                       <PolarAngleAxis dataKey="label" tick={{ fill: "var(--muted)", fontSize: 12 }} />
                       <Tooltip contentStyle={{ background: "#0a0b0f", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 12 }} />
-                      {summary.buckets_by_person.map((p, idx) => {
+                      {summary?.buckets_by_person.map((p, idx) => {
                         const c = getColor(p.name, idx);
                         return <Radar key={p.name} name={p.name} dataKey={p.name} stroke={c} fill={c} fillOpacity={0.35} />;
                       })}

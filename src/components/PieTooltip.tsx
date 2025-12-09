@@ -7,7 +7,9 @@ export default function PieTooltip({ active, payload }: TooltipProps<number, str
   const item = payload[0];
   const displayName = (item.payload as SenderDatum | undefined)?.name ?? item.name ?? "";
   const count = item.value ?? 0;
-  const percent = typeof item.percent === "number" ? Math.round(item.percent * 1000) / 10 : null;
+  // Recharts pie chart includes percent on the payload but it's not in the base type
+  const pct = (item as unknown as { percent?: number }).percent;
+  const percent = typeof pct === "number" ? Math.round(pct * 1000) / 10 : null;
 
   return (
     <div

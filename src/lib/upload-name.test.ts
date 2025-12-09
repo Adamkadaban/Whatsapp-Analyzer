@@ -1,5 +1,3 @@
-import fs from "fs";
-import path from "path";
 import { describe, expect, it } from "vitest";
 
 class TestFile extends Blob {
@@ -23,27 +21,34 @@ class TestFile extends Blob {
   }
 }
 
-const dataDir = path.join(process.cwd(), "data");
-const targetName = fs
-  .readdirSync(dataDir)
-  .find((name) => name.startsWith("WhatsApp Chat with") && name.toLowerCase().endsWith(".txt"));
+// Sample WhatsApp export filename with unicode characters
+const sampleFilenames = [
+  "WhatsApp Chat with Alice.txt",
+  "WhatsApp Chat with 友人.txt",
+  "WhatsApp Chat with 🎉 Party Group.txt",
+  "_chat.txt",
+  "chat-export.txt",
+];
 
-// These tests aim to reproduce the upload pipeline assumptions with the real filename (even if blank content).
-// They verify that the name passes extension detection and the File APIs don't throw for the odd filename.
-describe("upload filename edge case", () => {
-  it("finds the expected chat file in data/", () => {
-    expect(targetName, "expected a WhatsApp chat file in data/").toBeDefined();
-  });
+// These tests verify that the File APIs handle WhatsApp-style filenames without errors.
+describe("upload filename edge cases", () => {
+  it.each(sampleFilenames)("handles filename %s correctly", async (filename) => {
+    const file = new TestFile(["sample content"], filename, { type: "text/plain" });
 
-  it("treats the filename as .txt and reads via File APIs without error", async () => {
-    if (!targetName) return;
-    const file = new TestFile([""], targetName, { type: "text/plain" });
-
-    expect(file.name).toBe(targetName);
+    expect(file.name).toBe(filename);
     expect(file.name.toLowerCase().endsWith(".txt")).toBe(true);
 
-    await expect(file.text()).resolves.toBe("");
+    await expect(file.text()).resolves.toBe("sample content");
     const buf = await file.arrayBuffer();
-    expect(buf.byteLength).toBe(0);
+    expect(buf.byteLength).toBeGreaterThan(0);
+  });
+
+  it("reads file content via text() and arrayBuffer()", async () => {
+    const content = "[01/01/2024, 12:00] Alice: Hello!";
+    const file = new TestFile([content], "chat.txt", { type: "text/plain" });
+
+    expect(await file.text()).toBe(content);
+    const buf = await file.arrayBuffer();
+    expect(new TextDecoder().decode(buf)).toBe(content);
   });
 });
