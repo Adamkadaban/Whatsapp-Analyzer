@@ -1,9 +1,7 @@
 # Whatsapp-Analyzer
 
 <div align="center">
-  <h3>
-    <span style="color: #25d366;">WA</span> Analyzer
-  </h3>
+  <img src="public/logo.png" alt="WA Analyzer" height="50" />
   <p><strong>WhatsApp insights in seconds</strong></p>
   <p>100% Private • Runs Locally • Free</p>
   <br />
