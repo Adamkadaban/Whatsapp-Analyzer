@@ -20,6 +20,7 @@ function logTiming(label: string, data: Record<string, unknown>) {
 type DailyStackDatum = Record<string, number | string>;
 
 const colors = ["#64d8ff", "#ff7edb", "#8c7bff", "#7cf9c0", "#ffb347", "#ff6b6b", "#ffd166", "#06d6a0", "#118ab2", "#ef476f"];
+const MAX_LEGEND_SENDERS = 6;
 const monthLabels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const weekdayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -89,6 +90,8 @@ export default function Dashboard() {
   const dashboardRef = useRef<HTMLElement | null>(null);
 
   const hasData = Boolean(summary);
+  const senderCount = summary?.by_sender.length ?? 0;
+  const showLegend = senderCount <= MAX_LEGEND_SENDERS;
 
   const senderData: SenderDatum[] = summary
     ? summary.by_sender.slice(0, 6).map((s) => ({ name: s.label, value: s.value }))
@@ -906,7 +909,7 @@ export default function Dashboard() {
                       {summary?.buckets_by_person.map((p, idx) => (
                         <Bar key={p.name} dataKey={p.name} radius={[6, 6, 0, 0]} fill={getColor(p.name, idx)} />
                       ))}
-                      <Legend />
+                      {showLegend && <Legend />}
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -922,7 +925,7 @@ export default function Dashboard() {
                         ))}
                       </Pie>
                       <Tooltip content={<PieTooltip />} wrapperStyle={{ color: "#fff" }} />
-                      <Legend />
+                      {showLegend && <Legend />}
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
@@ -950,7 +953,7 @@ export default function Dashboard() {
               <ChartCard title="Monthly footprint">
                 <div style={{ height: 280 }}>
                   <ResponsiveContainer width="100%" height="100%">
-                    <RadarChart data={monthlyRadar} outerRadius={90}>
+                    <RadarChart data={monthlyRadar} outerRadius={showLegend ? 90 : 110}>
                       <PolarGrid stroke="rgba(255,255,255,0.08)" />
                       <PolarAngleAxis dataKey="label" tick={{ fill: "var(--muted)", fontSize: 12 }} />
                       <Tooltip contentStyle={{ background: "#0a0b0f", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 12 }} />
@@ -958,7 +961,7 @@ export default function Dashboard() {
                         const c = getColor(p.name, idx);
                         return <Radar key={p.name} name={p.name} dataKey={p.name} stroke={c} fill={c} fillOpacity={0.35} />;
                       })}
-                      <Legend />
+                      {showLegend && <Legend wrapperStyle={{ fontSize: 11, maxHeight: 50, overflow: "hidden" }} />}
                     </RadarChart>
                   </ResponsiveContainer>
                 </div>
@@ -967,7 +970,7 @@ export default function Dashboard() {
               <ChartCard title="Weekday footprint">
                 <div style={{ height: 280 }}>
                   <ResponsiveContainer width="100%" height="100%">
-                    <RadarChart data={weekdayRadar} outerRadius={90}>
+                    <RadarChart data={weekdayRadar} outerRadius={showLegend ? 90 : 110}>
                       <PolarGrid stroke="rgba(255,255,255,0.08)" />
                       <PolarAngleAxis dataKey="label" tick={{ fill: "var(--muted)", fontSize: 12 }} />
                       <Tooltip contentStyle={{ background: "#0a0b0f", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 12 }} />
@@ -975,7 +978,7 @@ export default function Dashboard() {
                         const c = getColor(p.name, idx);
                         return <Radar key={p.name} name={p.name} dataKey={p.name} stroke={c} fill={c} fillOpacity={0.35} />;
                       })}
-                      <Legend />
+                      {showLegend && <Legend wrapperStyle={{ fontSize: 11, maxHeight: 50, overflow: "hidden" }} />}
                     </RadarChart>
                   </ResponsiveContainer>
                 </div>
@@ -1003,7 +1006,7 @@ export default function Dashboard() {
                             connectNulls
                           />
                         ))}
-                        <Legend />
+                        {showLegend && <Legend />}
                       </LineChart>
                     </ResponsiveContainer>
                   </div>
@@ -1041,7 +1044,7 @@ export default function Dashboard() {
                             <Cell key={`${entry.name}-neg`} opacity={sentimentOpacity(idx)} />
                           ))}
                         </Bar>
-                        <Legend />
+                        <Legend wrapperStyle={{ fontSize: 12 }} />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
