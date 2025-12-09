@@ -83,6 +83,7 @@ export default function Dashboard() {
   const [showColorModal, setShowColorModal] = useState(false);
   const [showStopTooltip, setShowStopTooltip] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [showExportHelp, setShowExportHelp] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const dashboardRef = useRef<HTMLElement | null>(null);
@@ -1322,6 +1323,47 @@ export default function Dashboard() {
                 </div>
                 {error && <span style={{ color: "#ff7edb" }}>{error}</span>}
               </div>
+              <details
+                open={showExportHelp}
+                onToggle={(e) => setShowExportHelp((e.target as HTMLDetailsElement).open)}
+                style={{ marginTop: 8 }}
+              >
+                <summary
+                  style={{
+                    cursor: "pointer",
+                    color: "var(--muted)",
+                    fontSize: 14,
+                    userSelect: "none",
+                  }}
+                >
+                  How do I export my chats?
+                </summary>
+                <div
+                  style={{
+                    marginTop: 12,
+                    display: "grid",
+                    gap: 16,
+                    gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+                  }}
+                >
+                  <div>
+                    <strong style={{ display: "block", marginBottom: 6 }}>iPhone</strong>
+                    <ol style={{ lineHeight: 1.6, paddingLeft: 20, margin: 0, color: "var(--muted)" }}>
+                      <li>Open the chat, tap its name to enter Chat Info.</li>
+                      <li>Scroll to the bottom, tap <strong style={{ color: "#fff" }}>Export Chat</strong>.</li>
+                      <li>Choose <strong style={{ color: "#fff" }}>Without Media</strong> and save/share the TXT.</li>
+                    </ol>
+                  </div>
+                  <div>
+                    <strong style={{ display: "block", marginBottom: 6 }}>Android</strong>
+                    <ol style={{ lineHeight: 1.6, paddingLeft: 20, margin: 0, color: "var(--muted)" }}>
+                      <li>Open the chat, tap ⋮ → More → Export chat.</li>
+                      <li>Pick <strong style={{ color: "#fff" }}>Without Media</strong> to keep the file small.</li>
+                      <li>Save the TXT, then upload it here.</li>
+                    </ol>
+                  </div>
+                </div>
+              </details>
             </div>
           </div>
         )}

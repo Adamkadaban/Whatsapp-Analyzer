@@ -1,6 +1,9 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 
 export default function Landing() {
+  const [showPrivacyTooltip, setShowPrivacyTooltip] = useState(false);
+
   return (
     <main>
       <section className="container hero">
@@ -9,8 +12,42 @@ export default function Landing() {
           <h1>WhatsApp insights in seconds.</h1>
           <p>
             Drop your chat export and see your trends right away.
-            <span style={{ fontWeight: 700, textDecoration: "underline", textDecorationStyle: "dotted", textDecorationColor: "rgba(255,255,255,0.5)", marginLeft: 6 }}>
+            <span 
+              style={{ position: "relative", display: "inline-block", fontWeight: 700, textDecoration: "underline", textDecorationStyle: "dotted", textDecorationColor: "rgba(255,255,255,0.5)", marginLeft: 6 }}
+              onMouseEnter={() => setShowPrivacyTooltip(true)}
+              onMouseLeave={() => setShowPrivacyTooltip(false)}
+              onFocus={() => setShowPrivacyTooltip(true)}
+              onBlur={() => setShowPrivacyTooltip(false)}
+              tabIndex={0}
+            >
               Nothing leaves your computer
+              {showPrivacyTooltip && (
+                <span
+                  style={{
+                    position: "absolute",
+                    top: "calc(100% + 6px)",
+                    left: "50%",
+                    transform: "translateX(-50%)",
+                    minWidth: 260,
+                    maxWidth: 320,
+                    padding: "10px 12px",
+                    borderRadius: 12,
+                    background: "linear-gradient(135deg, #0d1117, #131a24)",
+                    border: "1px solid rgba(255,255,255,0.12)",
+                    boxShadow: "0 12px 32px rgba(0,0,0,0.35)",
+                    color: "#fff",
+                    fontSize: 13,
+                    lineHeight: 1.4,
+                    zIndex: 10,
+                    textDecoration: "none",
+                    fontWeight: 400,
+                    textAlign: "left",
+                    whiteSpace: "normal",
+                  }}
+                >
+                  Your chats are never sent anywhere. Everything runs 100% locally in your browser.
+                </span>
+              )}
             </span>
             , and you can review the source anytime.
           </p>
@@ -38,34 +75,6 @@ export default function Landing() {
                 View source
               </a>
           </div>
-        </div>
-      </section>
-      <section
-        className="container"
-        style={{
-          padding: "32px 16px",
-          gap: "16px",
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-        }}
-      >
-        <div>
-          <h2 style={{ marginBottom: 8 }}>Export on iPhone</h2>
-          <ol style={{ lineHeight: 1.6, paddingLeft: 20 }}>
-            <li>Open the chat, tap its name to enter Chat Info.</li>
-            <li>Scroll to the bottom, tap <strong>Export Chat</strong>.</li>
-            <li>Choose <strong>Without Media</strong> and save/share the TXT.</li>
-          </ol>
-        </div>
-        <div>
-          <h2 style={{ marginBottom: 8 }}>Export on Android</h2>
-          <ol style={{ lineHeight: 1.6, paddingLeft: 20 }}>
-            <li>Open the chat, tap &middot;&middot;&middot; &rarr; More &rarr; Export chat.</li>
-            <li>Pick <strong>Without Media</strong> to keep the file small.</li>
-            <li>
-              Share or save the TXT, then drop it <Link to="/dashboard">here</Link> to analyze.
-            </li>
-          </ol>
         </div>
       </section>
     </main>
