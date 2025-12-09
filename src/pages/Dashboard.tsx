@@ -101,6 +101,59 @@ export default function Dashboard() {
     ? summary.daily.map((d) => ({ day: d.label, messages: d.value }))
     : [];
 
+  // Parse YYYY-MM-DD as local date (not UTC) to avoid timezone shifts
+  const parseLocalDate = (dateStr: string) => {
+    const [year, month, day] = dateStr.split("-").map(Number);
+    return new Date(year, month - 1, day);
+  };
+
+  // Compute busiest/quietest day and longest streak
+  const busiestDay = useMemo(() => {
+    if (!dailyData.length) return null;
+    return dailyData.reduce((max, d) => (d.messages > max.messages ? d : max), dailyData[0]);
+  }, [dailyData]);
+
+  const quietestDay = useMemo(() => {
+    if (!dailyData.length) return null;
+    return dailyData.reduce((min, d) => (d.messages < min.messages ? d : min), dailyData[0]);
+  }, [dailyData]);
+
+  const longestStreakData = useMemo(() => {
+    if (!dailyData.length) return { days: 0, start: "", end: "" };
+    const sorted = [...dailyData].sort((a, b) => parseLocalDate(a.day).getTime() - parseLocalDate(b.day).getTime());
+    let maxStreak = 1;
+    let currentStreak = 1;
+    let maxStart = 0;
+    let maxEnd = 0;
+    let currentStart = 0;
+    const oneDay = 24 * 60 * 60 * 1000;
+    for (let i = 1; i < sorted.length; i++) {
+      const prev = parseLocalDate(sorted[i - 1].day).getTime();
+      const curr = parseLocalDate(sorted[i].day).getTime();
+      if (curr - prev === oneDay) {
+        currentStreak++;
+        if (currentStreak > maxStreak) {
+          maxStreak = currentStreak;
+          maxStart = currentStart;
+          maxEnd = i;
+        }
+      } else {
+        currentStreak = 1;
+        currentStart = i;
+      }
+    }
+    return {
+      days: maxStreak,
+      start: sorted[maxStart]?.day ?? "",
+      end: sorted[maxEnd]?.day ?? sorted[maxStart]?.day ?? "",
+    };
+  }, [dailyData]);
+
+  const formatDayLabel = (day: string) => {
+    const date = parseLocalDate(day);
+    return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  };
+
   const topStarter = summary?.conversation_starters[0];
   const topStarterShare = summary && topStarter && summary.conversation_count
     ? Math.round((topStarter.value / summary.conversation_count) * 100)
@@ -165,6 +218,21 @@ export default function Dashboard() {
           label: "Active days",
           value: summary.timeline.length.toLocaleString(),
           detail: `Senders: ${summary.by_sender.length}`,
+        },
+        {
+          label: "Busiest day",
+          value: busiestDay ? formatDayLabel(busiestDay.day) : "–",
+          detail: busiestDay ? `${busiestDay.messages.toLocaleString()} ${busiestDay.messages === 1 ? "message" : "messages"}` : "",
+        },
+        {
+          label: "Quietest day",
+          value: quietestDay ? formatDayLabel(quietestDay.day) : "–",
+          detail: quietestDay ? `${quietestDay.messages.toLocaleString()} ${quietestDay.messages === 1 ? "message" : "messages"}` : "",
+        },
+        {
+          label: "Longest streak",
+          value: `${longestStreakData.days} ${longestStreakData.days === 1 ? "day" : "days"}`,
+          detail: longestStreakData.start ? `${formatDayLabel(longestStreakData.start)} – ${formatDayLabel(longestStreakData.end)}` : "",
         },
         {
           label: "Conversation starts",
