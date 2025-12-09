@@ -5,14 +5,14 @@ import PieTooltip from "./PieTooltip";
 type Payload = TooltipProps<number, string>["payload"];
 
 describe("PieTooltip", () => {
-  const payload: Payload = [
+  const payload = [
     {
       name: "Alice",
       value: 120,
       percent: 0.6,
       payload: { name: "Alice", value: 120 },
-    } as any,
-  ];
+    },
+  ] as Payload;
 
   it("renders name and message count with white text", () => {
     render(<PieTooltip active payload={payload} />);

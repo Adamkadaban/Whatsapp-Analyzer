@@ -3,9 +3,20 @@ import EmojiCloud, { type CloudWord } from "./EmojiCloud";
 import { vi } from "vitest";
 
 vi.mock("d3-cloud", () => {
+  interface MockCloud {
+    size: () => MockCloud;
+    words: () => MockCloud;
+    padding: () => MockCloud;
+    spiral: () => MockCloud;
+    font: () => MockCloud;
+    fontSize: () => MockCloud;
+    rotate: () => MockCloud;
+    on: (evt: string, cb: (output: { text: string; x: number; y: number; size: number; rotate: number; index: number }[]) => void) => MockCloud;
+    start: () => MockCloud;
+  }
   return {
-    default: () => {
-      const self: any = {
+    default: (): MockCloud => {
+      const self: MockCloud = {
         size: () => self,
         words: () => self,
         padding: () => self,
@@ -13,7 +24,7 @@ vi.mock("d3-cloud", () => {
         font: () => self,
         fontSize: () => self,
         rotate: () => self,
-        on: (_evt: string, cb: (output: any[]) => void) => {
+        on: (_evt: string, cb) => {
           cb([
             { text: "😀", x: 0, y: 0, size: 32, rotate: 0, index: 0 },
             { text: "🔥", x: 8, y: 8, size: 28, rotate: 0, index: 1 },
@@ -39,7 +50,7 @@ beforeAll(() => {
     unobserve() {}
     disconnect() {}
   }
-  (globalThis as any).ResizeObserver = ResizeObserverMock;
+  globalThis.ResizeObserver = ResizeObserverMock;
 
   Object.defineProperty(HTMLElement.prototype, "clientWidth", {
     configurable: true,

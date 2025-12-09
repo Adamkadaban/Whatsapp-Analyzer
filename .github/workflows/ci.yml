@@ -68,10 +68,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Lint
+        run: pnpm lint
+
       - name: Typecheck
         run: pnpm tsc --noEmit
-        continue-on-error: true  # Remove once strict types are fixed
 
       - name: Run tests
         run: pnpm test
-        continue-on-error: true  # Remove once test data dependency is fixed

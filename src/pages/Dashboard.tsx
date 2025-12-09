@@ -17,8 +17,6 @@ function logTiming(label: string, data: Record<string, unknown>) {
   }
 }
 
-type DailyStackDatum = Record<string, number | string>;
-
 const colors = ["#64d8ff", "#ff7edb", "#8c7bff", "#7cf9c0", "#ffb347", "#ff6b6b", "#ffd166", "#06d6a0", "#118ab2", "#ef476f"];
 const MAX_LEGEND_SENDERS = 6;
 const monthLabels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -97,9 +95,10 @@ export default function Dashboard() {
     ? summary.by_sender.slice(0, 6).map((s) => ({ name: s.label, value: s.value }))
     : [];
 
-  const dailyData: DailyDatum[] = summary
-    ? summary.daily.map((d) => ({ day: d.label, messages: d.value }))
-    : [];
+  const dailyData: DailyDatum[] = useMemo(
+    () => summary ? summary.daily.map((d) => ({ day: d.label, messages: d.value })) : [],
+    [summary]
+  );
 
   // Parse YYYY-MM-DD as local date (not UTC) to avoid timezone shifts
   const parseLocalDate = (dateStr: string) => {
@@ -287,15 +286,15 @@ export default function Dashboard() {
 
   const wordCloud = summary ? (filterStopwords ? summary.word_cloud : summary.word_cloud_no_stop) : [];
   const emojiCloud = summary?.emoji_cloud ?? [];
-  const topPhrases = summary
+  const _topPhrases = summary
     ? (filterStopwords ? summary.top_phrases : summary.top_phrases_no_stop).slice(0, 15)
     : [];
   const perPersonPhrases = summary
     ? (filterStopwords ? summary.per_person_phrases : summary.per_person_phrases_no_stop)
     : [];
 
-  const sentimentByDay = summary?.sentiment_by_day ?? [];
-  const sentimentOverall = summary?.sentiment_overall ?? [];
+  const sentimentByDay = useMemo(() => summary?.sentiment_by_day ?? [], [summary]);
+  const sentimentOverall = useMemo(() => summary?.sentiment_overall ?? [], [summary]);
 
   const sentimentLaneData = useMemo(() => {
     if (!sentimentByDay.length) return [] as Record<string, number | string>[];
