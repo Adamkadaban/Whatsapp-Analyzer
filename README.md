@@ -1,13 +1,20 @@
 # Whatsapp-Analyzer
 
-Client-side WhatsApp chat analytics with a React/Vite UI. Everything runs locally in the browser—no uploads.
+<div align="center">
+  <h3>
+    <span style="color: #25d366;">WA</span> Analyzer
+  </h3>
+  <p><strong>WhatsApp insights in seconds</strong></p>
+  <p>100% Private • Runs Locally • Free</p>
+  <br />
+  <a href="https://wa.hackback.zip">
+    <img src="https://img.shields.io/badge/Try%20It-wa.hackback.zip-25d366?style=for-the-badge" alt="Try it" />
+  </a>
+</div>
 
-## Features
-- Local-only parsing and analytics (stays on your device)
-- Responsive UI on large exports
-- Rich visuals: timeline, hourly rhythm, per-person stats, emoji/word clouds, radar footprints
-- Export options: CSV/JSON aggregates, PDF snapshot (client-side)
-- GitHub Pages deployment with custom domain `wa.hackback.zip`
+<br />
+
+Client-side WhatsApp chat analytics with a React/Vite UI. Everything runs locally in the browser—no uploads.
 
 ## Prerequisites
 - Node.js 20+
@@ -36,11 +43,3 @@ pnpm dev
 # From web/
 pnpm build
 ```
-Outputs go to `web/dist`. The GitHub Actions workflow (`.github/workflows/deploy.yml`) builds WASM, runs the web build, writes the CNAME (`wa.hackback.zip`), and deploys to GitHub Pages.
-
-## Exporting a PDF snapshot
-- Load a chat on the Dashboard, then click **Export PDF** in the header controls.
-- The PDF mirrors the current dashboard layout and styling; your data stays on-device.
-
-## Notes
-- Data never leaves the browser. Drag-drop or file-pick your exported `.txt` chat and view insights instantly.
