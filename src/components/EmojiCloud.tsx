@@ -54,7 +54,7 @@ export default function EmojiCloud({
       if (max === min) return 36;
       // sqrt easing keeps large differences visible without dwarfing smaller emojis.
       const t = Math.sqrt((v - min) / (max - min));
-      return 20 + t * 60; // 20–80px range, proportional to usage
+      return 20 + t * 60; // 20-80px range, proportional to usage
     };
 
     const wordsForLayout = filtered.map((w, idx) => ({

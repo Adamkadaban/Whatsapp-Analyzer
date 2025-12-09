@@ -220,32 +220,32 @@ export default function Dashboard() {
         },
         {
           label: "Busiest day",
-          value: busiestDay ? formatDayLabel(busiestDay.day) : "–",
+          value: busiestDay ? formatDayLabel(busiestDay.day) : "-",
           detail: busiestDay ? `${busiestDay.messages.toLocaleString()} ${busiestDay.messages === 1 ? "message" : "messages"}` : "",
         },
         {
           label: "Quietest day",
-          value: quietestDay ? formatDayLabel(quietestDay.day) : "–",
+          value: quietestDay ? formatDayLabel(quietestDay.day) : "-",
           detail: quietestDay ? `${quietestDay.messages.toLocaleString()} ${quietestDay.messages === 1 ? "message" : "messages"}` : "",
         },
         {
           label: "Longest streak",
           value: `${longestStreakData.days} ${longestStreakData.days === 1 ? "day" : "days"}`,
-          detail: longestStreakData.start ? `${formatDayLabel(longestStreakData.start)} – ${formatDayLabel(longestStreakData.end)}` : "",
+          detail: longestStreakData.start ? `${formatDayLabel(longestStreakData.start)} - ${formatDayLabel(longestStreakData.end)}` : "",
         },
         {
           label: "Conversation starts",
-          value: topStarter?.label ?? "–",
-          detail: `${topStarter?.label ?? "–"} started ${topStarterShare}% of conversations`,
+          value: topStarter?.label ?? "-",
+          detail: `${topStarter?.label ?? "-"} started ${topStarterShare}% of conversations`,
         },
         {
           label: "Top emoji",
-          value: summary.top_emojis[0]?.label ?? "–",
+          value: summary.top_emojis[0]?.label ?? "-",
           detail: `${summary.top_emojis[0]?.value ?? 0} uses`,
         },
         {
           label: "Top word",
-          value: (filterStopwords ? summary.top_words : summary.top_words_no_stop)[0]?.label ?? "–",
+          value: (filterStopwords ? summary.top_words : summary.top_words_no_stop)[0]?.label ?? "-",
           detail: `${(filterStopwords ? summary.top_words : summary.top_words_no_stop)[0]?.value ?? 0} uses`,
         },
       ]

@@ -1,14 +1,19 @@
 # Whatsapp-Analyzer
 
-<div align="center">
+<p align="center">
   <img src="public/logo.png" alt="WA Analyzer" height="50" />
-  <p><strong>WhatsApp insights in seconds</strong></p>
-  <p>100% Private • Runs Locally • Free</p>
-  <br />
+</p>
+<p align="center">
+  <strong>WhatsApp insights in seconds</strong>
+</p>
+<p align="center">
+  100% Private • Runs Locally • Free
+</p>
+<p align="center">
   <a href="https://wa.hackback.zip">
     <img src="https://img.shields.io/badge/Try%20It-wa.hackback.zip-25d366?style=for-the-badge" alt="Try it" />
   </a>
-</div>
+</p>
 
 <br />
 
