@@ -279,6 +279,19 @@ export default function Dashboard() {
   const [fileName, setFileName] = useState<string | null>(null);
   const [fileCount, setFileCount] = useState(0);
   const [analyzing, setAnalyzing] = useState(false);
+  const [processingElapsed, setProcessingElapsed] = useState(0);
+
+  // Track elapsed time during processing
+  useEffect(() => {
+    if (!processing) {
+      setProcessingElapsed(0);
+      return;
+    }
+    const interval = setInterval(() => {
+      setProcessingElapsed((prev) => prev + 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [processing]);
 
   // Preserve ZWJ (\u200d) so compound emoji sequences stay intact. Strip other common invisibles.
   const stripInvisibles = (text: string) => text.replace(/[\u200b-\u200c\u200e-\u200f\u202a-\u202e\u2060-\u2063\ufeff]/g, "");
@@ -676,7 +689,13 @@ export default function Dashboard() {
               <>
                 <div className="spinner" aria-hidden="true" />
                 <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 6 }}>
-                  {fileCount > 1 ? "Loading files…" : "Loading file…"}
+                  {processingElapsed >= 30
+                    ? "This is taking a while - you must text a lot!"
+                    : processingElapsed >= 10
+                      ? "Just a few more seconds…"
+                      : fileCount > 1
+                        ? "Loading files…"
+                        : "Loading file…"}
                 </div>
                 <div style={{ color: "var(--muted)" }}>{fileName}</div>
               </>
