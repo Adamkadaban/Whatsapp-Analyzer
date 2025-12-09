@@ -145,8 +145,8 @@ struct Journey {
     last_day: String,
     total_days: u32,
     total_messages: usize,
-    first_messages: Vec<JourneyMessage>,  // First few messages of the conversation
-    last_messages: Vec<JourneyMessage>,   // Last few messages of the conversation
+    first_messages: Vec<JourneyMessage>, // First few messages of the conversation
+    last_messages: Vec<JourneyMessage>,  // Last few messages of the conversation
     interesting_moments: Vec<JourneyMoment>,
 }
 
@@ -1768,7 +1768,11 @@ fn to_journey_message(msg: &Message, likely_you: &str) -> JourneyMessage {
 }
 
 /// Find "interesting" moments in the chat based on sentiment extremes and other signals
-fn find_interesting_moments(messages: &[Message], likely_you: &str, max_moments: usize) -> Vec<JourneyMoment> {
+fn find_interesting_moments(
+    messages: &[Message],
+    likely_you: &str,
+    max_moments: usize,
+) -> Vec<JourneyMoment> {
     if messages.len() < 10 {
         return Vec::new();
     }
@@ -1776,7 +1780,7 @@ fn find_interesting_moments(messages: &[Message], likely_you: &str, max_moments:
     // Score each message for "interestingness"
     // High absolute sentiment, long messages, exclamation marks, question marks, etc.
     let mut scored: Vec<(usize, f32, f32)> = Vec::new(); // (index, interest_score, sentiment)
-    
+
     for (i, msg) in messages.iter().enumerate() {
         let (sentiment, _) = sentiment_score(&msg.text);
         let text_len = msg.text.len() as f32;
@@ -1788,12 +1792,12 @@ fn find_interesting_moments(messages: &[Message], likely_you: &str, max_moments:
         } else {
             0.0
         };
-        
+
         // Skip very short or system messages
         if text_len < 10.0 || msg.text.contains("omitted") || msg.text.contains("deleted") {
             continue;
         }
-        
+
         // Interest score: combination of factors
         let interest = sentiment.abs() * 2.0
             + (text_len / 100.0).min(3.0)
@@ -1801,10 +1805,10 @@ fn find_interesting_moments(messages: &[Message], likely_you: &str, max_moments:
             + question_count * 0.3
             + emoji_count * 0.3
             + caps_ratio * 2.0;
-        
+
         scored.push((i, interest, sentiment));
     }
-    
+
     if scored.is_empty() {
         return Vec::new();
     }
@@ -1812,86 +1816,92 @@ fn find_interesting_moments(messages: &[Message], likely_you: &str, max_moments:
     // Divide messages into time segments to ensure spread
     let num_segments = max_moments.max(3);
     let segment_size = messages.len() / num_segments;
-    
+
     // For each segment, find the best positive and best negative moment
     let mut positive_candidates: Vec<(usize, f32, f32)> = Vec::new(); // (idx, interest, sentiment)
     let mut negative_candidates: Vec<(usize, f32, f32)> = Vec::new();
-    
+
     for seg in 0..num_segments {
         let seg_start = seg * segment_size;
-        let seg_end = if seg == num_segments - 1 { messages.len() } else { (seg + 1) * segment_size };
-        
+        let seg_end = if seg == num_segments - 1 {
+            messages.len()
+        } else {
+            (seg + 1) * segment_size
+        };
+
         // Find best positive moment in this segment
-        let best_positive = scored.iter()
+        let best_positive = scored
+            .iter()
             .filter(|(idx, _, sent)| *idx >= seg_start && *idx < seg_end && *sent > 0.1)
             .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
-        
+
         if let Some(&candidate) = best_positive {
             positive_candidates.push(candidate);
         }
-        
+
         // Find best negative moment in this segment
-        let best_negative = scored.iter()
+        let best_negative = scored
+            .iter()
             .filter(|(idx, _, sent)| *idx >= seg_start && *idx < seg_end && *sent < -0.1)
             .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
-        
+
         if let Some(&candidate) = best_negative {
             negative_candidates.push(candidate);
         }
     }
-    
+
     // Sort candidates by interest score
     positive_candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
     negative_candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-    
+
     // Select moments: try to get a mix of positive and negative, spread over time
     let mut selected: Vec<(usize, f32)> = Vec::new();
-    let mut pos_iter = positive_candidates.iter();
-    let mut neg_iter = negative_candidates.iter();
-    
+    let mut pos_iter = positive_candidates.iter().peekable();
+    let mut neg_iter = negative_candidates.iter().peekable();
+
     // Alternate between positive and negative, ensuring spread
     let min_gap = (messages.len() / (max_moments + 1)).max(30);
-    
+
     while selected.len() < max_moments {
         // Try to add a positive moment
-        while let Some(&(idx, _, sentiment)) = pos_iter.next() {
-            let too_close = selected.iter().any(|(sel_idx, _)| {
-                (idx as i64 - *sel_idx as i64).abs() < min_gap as i64
-            });
+        for &(idx, _, sentiment) in pos_iter.by_ref() {
+            let too_close = selected
+                .iter()
+                .any(|(sel_idx, _)| (idx as i64 - *sel_idx as i64).abs() < min_gap as i64);
             if !too_close {
                 selected.push((idx, sentiment));
                 break;
             }
         }
-        
+
         if selected.len() >= max_moments {
             break;
         }
-        
+
         // Try to add a negative moment
-        while let Some(&(idx, _, sentiment)) = neg_iter.next() {
-            let too_close = selected.iter().any(|(sel_idx, _)| {
-                (idx as i64 - *sel_idx as i64).abs() < min_gap as i64
-            });
+        for &(idx, _, sentiment) in neg_iter.by_ref() {
+            let too_close = selected
+                .iter()
+                .any(|(sel_idx, _)| (idx as i64 - *sel_idx as i64).abs() < min_gap as i64);
             if !too_close {
                 selected.push((idx, sentiment));
                 break;
             }
         }
-        
+
         // If we couldn't add any more, break to avoid infinite loop
-        if pos_iter.len() == 0 && neg_iter.len() == 0 {
+        if pos_iter.peek().is_none() && neg_iter.peek().is_none() {
             break;
         }
     }
-    
+
     // If we still don't have enough, fall back to top interesting moments
     if selected.len() < max_moments {
         scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         for (idx, _interest, sentiment) in &scored {
-            let too_close = selected.iter().any(|(sel_idx, _)| {
-                (*idx as i64 - *sel_idx as i64).abs() < min_gap as i64
-            });
+            let too_close = selected
+                .iter()
+                .any(|(sel_idx, _)| (*idx as i64 - *sel_idx as i64).abs() < min_gap as i64);
             if !too_close {
                 selected.push((*idx, *sentiment));
                 if selected.len() >= max_moments {
@@ -1900,21 +1910,21 @@ fn find_interesting_moments(messages: &[Message], likely_you: &str, max_moments:
             }
         }
     }
-    
+
     // Sort by chronological order
     selected.sort_by_key(|(idx, _)| *idx);
-    
+
     // Build moments with context
     let mut moments = Vec::new();
     for (idx, sentiment) in selected {
         let start = idx.saturating_sub(2);
         let end = (idx + 3).min(messages.len());
-        
+
         let context_messages: Vec<JourneyMessage> = messages[start..end]
             .iter()
             .map(|m| to_journey_message(m, likely_you))
             .collect();
-        
+
         let main_msg = &messages[idx];
         let title = if sentiment > 0.3 {
             "A joyful moment".to_string()
@@ -1927,12 +1937,9 @@ fn find_interesting_moments(messages: &[Message], likely_you: &str, max_moments:
         } else {
             "A memorable moment".to_string()
         };
-        
-        let description = format!(
-            "On {}",
-            main_msg.dt.format("%B %d, %Y at %I:%M %p")
-        );
-        
+
+        let description = format!("On {}", main_msg.dt.format("%B %d, %Y at %I:%M %p"));
+
         moments.push(JourneyMoment {
             title,
             description,
@@ -1941,7 +1948,7 @@ fn find_interesting_moments(messages: &[Message], likely_you: &str, max_moments:
             sentiment_score: sentiment,
         });
     }
-    
+
     moments
 }
 
@@ -1950,30 +1957,30 @@ fn build_journey(messages: &[Message]) -> Option<Journey> {
     if messages.is_empty() {
         return None;
     }
-    
+
     // Sort messages chronologically (important when multiple files are combined)
     let mut sorted_messages = messages.to_vec();
     sorted_messages.sort_by_key(|m| m.dt);
-    
+
     let first_msg = sorted_messages.first()?;
     let last_msg = sorted_messages.last()?;
-    
+
     let first_day = first_msg.dt.date();
     let last_day = last_msg.dt.date();
     let total_days = (last_day - first_day).num_days().max(1) as u32;
-    
+
     // Determine who is "you" - typically the person who sent "You deleted this message"
     // or has fewer messages (exporter is often the one getting the export)
     let mut sender_counts: HashMap<&str, usize> = HashMap::new();
     let mut deleted_you_sender: Option<&str> = None;
-    
+
     for msg in &sorted_messages {
         *sender_counts.entry(&msg.sender).or_insert(0) += 1;
         if msg.text.contains("You deleted this message") && deleted_you_sender.is_none() {
             deleted_you_sender = Some(&msg.sender);
         }
     }
-    
+
     // If we found a "You deleted" message, that sender is "you"
     // Otherwise, pick the sender with fewer messages (often the exporter)
     let likely_you = deleted_you_sender.unwrap_or_else(|| {
@@ -1983,7 +1990,7 @@ fn build_journey(messages: &[Message]) -> Option<Journey> {
             .map(|(sender, _)| *sender)
             .unwrap_or("")
     });
-    
+
     // Get first conversation messages (until a 30-min gap or max 5 messages)
     let mut first_messages: Vec<JourneyMessage> = Vec::new();
     for (i, msg) in sorted_messages.iter().enumerate() {
@@ -1999,7 +2006,7 @@ fn build_journey(messages: &[Message]) -> Option<Journey> {
             }
         }
     }
-    
+
     // Get last conversation messages (go backwards from end until 30-min gap or max 5)
     let mut last_messages: Vec<JourneyMessage> = Vec::new();
     for i in (0..sorted_messages.len()).rev() {
@@ -2019,9 +2026,9 @@ fn build_journey(messages: &[Message]) -> Option<Journey> {
     }
     // Reverse to get chronological order
     last_messages.reverse();
-    
+
     let interesting_moments = find_interesting_moments(&sorted_messages, likely_you, 4);
-    
+
     Some(Journey {
         first_day: first_day.format("%B %d, %Y").to_string(),
         last_day: last_day.format("%B %d, %Y").to_string(),
@@ -2653,15 +2660,23 @@ mod tests {
 [1/1/20, 8:10:00 PM] Alice: Evening end"#;
         let summary = summarize(raw, 5, 5).unwrap();
         let journey = summary.journey.expect("journey should exist");
-        
+
         // First conversation should have 3 messages (10:00, 10:05, 10:10 - all within 30 min)
-        assert_eq!(journey.first_messages.len(), 3, "first conversation should have 3 messages");
+        assert_eq!(
+            journey.first_messages.len(),
+            3,
+            "first conversation should have 3 messages"
+        );
         assert_eq!(journey.first_messages[0].text, "First message!");
         assert_eq!(journey.first_messages[1].text, "Second message");
         assert_eq!(journey.first_messages[2].text, "Third message");
-        
+
         // Last conversation should have 3 messages (8:00, 8:05, 8:10 - all within 30 min)
-        assert_eq!(journey.last_messages.len(), 3, "last conversation should have 3 messages");
+        assert_eq!(
+            journey.last_messages.len(),
+            3,
+            "last conversation should have 3 messages"
+        );
         assert_eq!(journey.last_messages[0].text, "Evening start");
         assert_eq!(journey.last_messages[1].text, "Evening reply");
         assert_eq!(journey.last_messages[2].text, "Evening end");
@@ -2676,11 +2691,11 @@ mod tests {
 [1/1/20, 10:05:00 AM] Bob: Day 1 reply"#;
         let summary = summarize(raw, 5, 5).unwrap();
         let journey = summary.journey.expect("journey should exist");
-        
+
         // First messages should be from Day 1 (chronologically first), not file order
         assert_eq!(journey.first_messages[0].text, "Day 1 first message");
         assert_eq!(journey.first_messages[1].text, "Day 1 reply");
-        
+
         // Last messages should be from Day 2 (chronologically last)
         assert_eq!(journey.last_messages[0].text, "Day 2 message");
         assert_eq!(journey.last_messages[1].text, "Day 2 reply");
