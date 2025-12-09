@@ -1136,7 +1136,6 @@ export default function Dashboard() {
             {/* Journey Through Your Messages */}
             {summary?.journey && (
               <div className="card" style={{ marginTop: 24 }}>
-                <div className="tag" style={{ marginBottom: 12 }}>✨ Story</div>
                 <h2 style={{ margin: "0 0 24px 0", fontSize: 28, fontWeight: 700 }}>
                   Journey Through Your Messages
                 </h2>
@@ -1144,36 +1143,36 @@ export default function Dashboard() {
                 {/* Overview stats */}
                 <div
                   style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
-                    gap: 16,
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 32,
                     marginBottom: 32,
-                    padding: 20,
+                    padding: "20px 32px",
                     background: "rgba(255,255,255,0.03)",
                     borderRadius: 16,
                     border: "1px solid rgba(255,255,255,0.06)",
                   }}
                 >
-                  <div style={{ textAlign: "center" }}>
+                  <div style={{ textAlign: "center", display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
                     <div style={{ fontSize: 32, fontWeight: 700, color: "#64d8ff" }}>
                       {summary.journey.total_messages.toLocaleString()}
                     </div>
                     <div style={{ color: "var(--muted)", fontSize: 13 }}>messages</div>
                   </div>
-                  <div style={{ textAlign: "center" }}>
+                  <div style={{ textAlign: "center", display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
                     <div style={{ fontSize: 32, fontWeight: 700, color: "#ff7edb" }}>
                       {summary.journey.total_days.toLocaleString()}
                     </div>
-                    <div style={{ color: "var(--muted)", fontSize: 13 }}>days of chatting</div>
+                    <div style={{ color: "var(--muted)", fontSize: 13 }}>days</div>
                   </div>
-                  <div style={{ textAlign: "center" }}>
-                    <div style={{ fontSize: 20, fontWeight: 700, color: "var(--text)" }}>
+                  <div style={{ textAlign: "center", display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
+                    <div style={{ fontSize: 32, fontWeight: 700, color: "var(--text)", whiteSpace: "nowrap" }}>
                       {summary.journey.first_day}
                     </div>
                     <div style={{ color: "var(--muted)", fontSize: 13 }}>first message</div>
                   </div>
-                  <div style={{ textAlign: "center" }}>
-                    <div style={{ fontSize: 20, fontWeight: 700, color: "var(--text)" }}>
+                  <div style={{ textAlign: "center", display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
+                    <div style={{ fontSize: 32, fontWeight: 700, color: "var(--text)", whiteSpace: "nowrap" }}>
                       {summary.journey.last_day}
                     </div>
                     <div style={{ color: "var(--muted)", fontSize: 13 }}>last message</div>
@@ -1182,8 +1181,8 @@ export default function Dashboard() {
 
                 {/* First message */}
                 <div style={{ marginBottom: 32 }}>
-                  <h3 style={{ margin: "0 0 12px 0", fontSize: 18, display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontSize: 24 }}>🌅</span> Where it all began
+                  <h3 style={{ margin: "0 0 12px 0", fontSize: 18 }}>
+                    Where it all began
                   </h3>
                   <p style={{ color: "var(--muted)", margin: "0 0 12px 0", fontSize: 14 }}>
                     Your conversation started with:
@@ -1209,8 +1208,8 @@ export default function Dashboard() {
                 {/* Interesting moments */}
                 {summary.journey.interesting_moments.length > 0 && (
                   <div style={{ marginBottom: 32 }}>
-                    <h3 style={{ margin: "0 0 16px 0", fontSize: 18, display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ fontSize: 24 }}>💫</span> Memorable moments
+                    <h3 style={{ margin: "0 0 16px 0", fontSize: 18 }}>
+                      Memorable moments
                     </h3>
                     <div style={{ display: "grid", gap: 20 }}>
                       {summary.journey.interesting_moments.map((moment, idx) => (
@@ -1244,8 +1243,8 @@ export default function Dashboard() {
 
                 {/* Last message */}
                 <div>
-                  <h3 style={{ margin: "0 0 12px 0", fontSize: 18, display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontSize: 24 }}>🌙</span> The latest chapter
+                  <h3 style={{ margin: "0 0 12px 0", fontSize: 18 }}>
+                    The latest chapter
                   </h3>
                   <p style={{ color: "var(--muted)", margin: "0 0 12px 0", fontSize: 14 }}>
                     Your most recent messages:

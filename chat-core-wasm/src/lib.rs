@@ -1805,19 +1805,98 @@ fn find_interesting_moments(messages: &[Message], likely_you: &str, max_moments:
         scored.push((i, interest, sentiment));
     }
     
-    // Sort by interest score descending
-    scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    if scored.is_empty() {
+        return Vec::new();
+    }
+
+    // Divide messages into time segments to ensure spread
+    let num_segments = max_moments.max(3);
+    let segment_size = messages.len() / num_segments;
     
-    // Take top moments, but ensure they're spread apart (at least 50 messages apart)
+    // For each segment, find the best positive and best negative moment
+    let mut positive_candidates: Vec<(usize, f32, f32)> = Vec::new(); // (idx, interest, sentiment)
+    let mut negative_candidates: Vec<(usize, f32, f32)> = Vec::new();
+    
+    for seg in 0..num_segments {
+        let seg_start = seg * segment_size;
+        let seg_end = if seg == num_segments - 1 { messages.len() } else { (seg + 1) * segment_size };
+        
+        // Find best positive moment in this segment
+        let best_positive = scored.iter()
+            .filter(|(idx, _, sent)| *idx >= seg_start && *idx < seg_end && *sent > 0.1)
+            .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+        
+        if let Some(&candidate) = best_positive {
+            positive_candidates.push(candidate);
+        }
+        
+        // Find best negative moment in this segment
+        let best_negative = scored.iter()
+            .filter(|(idx, _, sent)| *idx >= seg_start && *idx < seg_end && *sent < -0.1)
+            .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+        
+        if let Some(&candidate) = best_negative {
+            negative_candidates.push(candidate);
+        }
+    }
+    
+    // Sort candidates by interest score
+    positive_candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    negative_candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    
+    // Select moments: try to get a mix of positive and negative, spread over time
     let mut selected: Vec<(usize, f32)> = Vec::new();
-    for (idx, _interest, sentiment) in scored {
-        let too_close = selected.iter().any(|(sel_idx, _)| {
-            (idx as i64 - *sel_idx as i64).abs() < 50
-        });
-        if !too_close {
-            selected.push((idx, sentiment));
-            if selected.len() >= max_moments {
+    let mut pos_iter = positive_candidates.iter();
+    let mut neg_iter = negative_candidates.iter();
+    
+    // Alternate between positive and negative, ensuring spread
+    let min_gap = (messages.len() / (max_moments + 1)).max(30);
+    
+    while selected.len() < max_moments {
+        // Try to add a positive moment
+        while let Some(&(idx, _, sentiment)) = pos_iter.next() {
+            let too_close = selected.iter().any(|(sel_idx, _)| {
+                (idx as i64 - *sel_idx as i64).abs() < min_gap as i64
+            });
+            if !too_close {
+                selected.push((idx, sentiment));
                 break;
+            }
+        }
+        
+        if selected.len() >= max_moments {
+            break;
+        }
+        
+        // Try to add a negative moment
+        while let Some(&(idx, _, sentiment)) = neg_iter.next() {
+            let too_close = selected.iter().any(|(sel_idx, _)| {
+                (idx as i64 - *sel_idx as i64).abs() < min_gap as i64
+            });
+            if !too_close {
+                selected.push((idx, sentiment));
+                break;
+            }
+        }
+        
+        // If we couldn't add any more, break to avoid infinite loop
+        if pos_iter.len() == 0 && neg_iter.len() == 0 {
+            break;
+        }
+    }
+    
+    // If we still don't have enough, fall back to top interesting moments
+    if selected.len() < max_moments {
+        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        for (idx, _interest, sentiment) in &scored {
+            let too_close = selected.iter().any(|(sel_idx, _)| {
+                (*idx as i64 - *sel_idx as i64).abs() < min_gap as i64
+            });
+            if !too_close {
+                selected.push((*idx, *sentiment));
+                if selected.len() >= max_moments {
+                    break;
+                }
             }
         }
     }
@@ -1838,15 +1917,15 @@ fn find_interesting_moments(messages: &[Message], likely_you: &str, max_moments:
         
         let main_msg = &messages[idx];
         let title = if sentiment > 0.3 {
-            "A joyful moment ✨".to_string()
+            "A joyful moment".to_string()
         } else if sentiment < -0.3 {
-            "A heartfelt exchange 💭".to_string()
+            "A heartfelt exchange".to_string()
         } else if main_msg.text.contains('?') {
-            "A curious conversation ❓".to_string()
+            "A curious conversation".to_string()
         } else if main_msg.text.len() > 200 {
-            "A meaningful message 💬".to_string()
+            "A meaningful message".to_string()
         } else {
-            "A memorable moment 📝".to_string()
+            "A memorable moment".to_string()
         };
         
         let description = format!(
@@ -1941,7 +2020,7 @@ fn build_journey(messages: &[Message]) -> Option<Journey> {
     // Reverse to get chronological order
     last_messages.reverse();
     
-    let interesting_moments = find_interesting_moments(&sorted_messages, likely_you, 3);
+    let interesting_moments = find_interesting_moments(&sorted_messages, likely_you, 4);
     
     Some(Journey {
         first_day: first_day.format("%B %d, %Y").to_string(),
