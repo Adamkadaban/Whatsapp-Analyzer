@@ -10,7 +10,7 @@ export default function Navbar() {
   return (
     <header className="navbar">
       <Link to="/" className="logo">
-        <span style={{ color: "#25d366" }}>WA</span> Analyzer
+        <img src="/logo.svg" alt="WA Analyzer" height="28" />
       </Link>
       <nav style={{ display: "flex", gap: "14px", alignItems: "center" }}>
         {links.map((link) => {

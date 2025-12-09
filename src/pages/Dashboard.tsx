@@ -721,10 +721,27 @@ export default function Dashboard() {
         import("jspdf"),
       ]);
 
+      // Toggle export mode to show the export banner/logo and hide controls.
+      node.classList.add("exporting");
+
+      // Capture dimensions and scale safely within jsPDF limits (max 14,400 px)
+      const width = Math.ceil(node.scrollWidth);
+      const height = Math.ceil(node.scrollHeight + 80); // buffer for banner spacing
+      const maxDim = 14000;
+      const scale = Math.min(2, maxDim / Math.max(width, height)); // up to 2x for crispness
+      const canvasWidth = Math.floor(width * scale);
+      const canvasHeight = Math.floor(height * scale);
+
       const imgData = await toPng(node, {
-        pixelRatio: 2,
+        pixelRatio: 1,
         cacheBust: true,
         backgroundColor: getComputedStyle(document.body).backgroundColor || "#05060a",
+        width,
+        height,
+        canvasWidth,
+        canvasHeight,
+        skipFonts: true,
+        style: { width: `${width}px`, height: `${height}px` },
         filter: (n) => {
           const el = n as HTMLElement;
           if (el.classList?.contains("export-hide")) return false;
@@ -732,27 +749,60 @@ export default function Dashboard() {
         },
         // onClone is an undocumented but functional option in html-to-image
         onClone: (clonedDoc: Document) => {
+          // Ensure export banner is visible in the clone
+          const mainEl = clonedDoc.querySelector("main") as HTMLElement;
+          if (mainEl) mainEl.classList.add("exporting");
           clonedDoc.querySelectorAll(".export-banner").forEach((el) => {
             (el as HTMLElement).style.display = "inline-flex";
           });
+          // Remove remote font stylesheets to avoid CORS cssRules errors in html-to-image
+          clonedDoc.querySelectorAll('link[href*="fonts.googleapis"]').forEach((el) => el.remove());
         },
       } as Parameters<typeof toPng>[1] & { onClone?: (doc: Document) => void });
 
-      const { width, height } = node.getBoundingClientRect();
       const orientation = width >= height ? "landscape" : "portrait";
-      const pdf = new jsPDF({ orientation, unit: "px", format: [width, height], compress: true });
-      pdf.addImage(imgData, "PNG", 0, 0, width, height, undefined, "FAST");
+      const pdf = new jsPDF({ orientation, unit: "px", format: [canvasWidth, canvasHeight], compress: true });
+      pdf.addImage(imgData, "PNG", 0, 0, canvasWidth, canvasHeight, undefined, "FAST");
+
+      // Add a clickable link over the top-left logo area
+      const linkUrl = "https://wa.hackback.zip/";
+
+      // Measure the export banner in the source DOM to position the link accurately
+      let linkX = 12;
+      let linkY = 12;
+      let linkWidth = Math.min(180, canvasWidth * 0.25);
+      let linkHeight = 48;
+      try {
+        const banner = node.querySelector(".export-banner") as HTMLElement | null;
+        const nodeRect = node.getBoundingClientRect();
+        const bannerRect = banner?.getBoundingClientRect();
+        if (bannerRect) {
+          linkX = Math.max(4, (bannerRect.left - nodeRect.left) * scale);
+          linkY = Math.max(4, (bannerRect.top - nodeRect.top) * scale);
+          linkWidth = Math.max(40, bannerRect.width * scale);
+          linkHeight = Math.max(20, bannerRect.height * scale);
+        }
+      } catch (e) {
+        console.warn("Failed to measure export banner for PDF link", e);
+      }
+
+      pdf.link(linkX, linkY, linkWidth, linkHeight, { url: linkUrl });
+      // Add a tiny invisible text link as a fallback for some readers
+      pdf.setFontSize(1);
+      pdf.textWithLink(" ", linkX + 1, linkY + linkHeight / 2, { url: linkUrl });
       pdf.save("whatsapp-dashboard.pdf");
     } catch (err) {
       console.error(err);
       setExportError("Failed to export PDF. Please try again.");
     } finally {
       setExporting(false);
+      // Remove export class if it was added
+      dashboardRef.current?.classList.remove("exporting");
     }
   }
 
   return (
-    <main ref={dashboardRef}>
+    <main ref={dashboardRef} style={{ position: "relative" }}>
       {(processing || isReady || analyzing) && (
         <div className="loading-overlay" role="status" aria-live="polite">
           <div className="loading-card">

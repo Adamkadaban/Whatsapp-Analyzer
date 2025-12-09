@@ -10,7 +10,7 @@ describe("Navbar", () => {
       </MemoryRouter>
     );
 
-    expect(screen.getByText(/Analyzer/i)).toBeInTheDocument();
+    expect(screen.getByAltText(/WA Analyzer/i)).toBeInTheDocument();
 
     const home = screen.getByText("Home");
     const insights = screen.getByText("Insights");

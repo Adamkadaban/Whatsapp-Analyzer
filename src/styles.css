@@ -21,6 +21,8 @@ body {
   margin: 0;
   background: var(--bg);
   min-height: 100vh;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
 }
 
 /* Use a pseudo-element for the gradient so it covers the full scrollable area */
@@ -68,6 +70,8 @@ a {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
 }
 
 .page {
@@ -182,11 +186,18 @@ section {
 }
 
 .logo {
+  font-size: 20px;
   font-weight: 800;
   letter-spacing: -0.01em;
   display: inline-flex;
   align-items: center;
   gap: 10px;
+}
+
+/* Show the export banner when exporting */
+.exporting .export-banner {
+  display: inline-flex;
+  align-items: center;
 }
 
 .footer {
