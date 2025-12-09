@@ -1,5 +1,3 @@
-# Whatsapp-Analyzer
-
 <p align="center">
   <img src="public/logo.png" alt="WA Analyzer" height="50" />
 </p>
