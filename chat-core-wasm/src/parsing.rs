@@ -1,4 +1,4 @@
-use chrono::{Datelike, NaiveDate, NaiveDateTime};
+use chrono::{Datelike, NaiveDateTime};
 use once_cell::sync::OnceCell;
 use regex::Regex;
 
@@ -225,16 +225,6 @@ pub(crate) fn parse_messages(raw: &str) -> Vec<Message> {
 
     filter_system_messages(messages)
 }
-
-#[allow(dead_code)]
-pub(crate) fn daily_counts_from_messages(messages: &[Message]) -> Vec<(NaiveDate, u32)> {
-    let mut map = std::collections::BTreeMap::new();
-    for m in messages {
-        *map.entry(m.dt.date()).or_insert(0u32) += 1;
-    }
-    map.into_iter().collect()
-}
-
 pub(crate) fn weekday_index(wd: chrono::Weekday) -> usize {
     wd.num_days_from_sunday() as usize
 }

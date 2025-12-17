@@ -435,21 +435,3 @@ pub(crate) fn person_stats(messages: &[Message]) -> Vec<PersonStat> {
     stats.sort_by_key(|s| std::cmp::Reverse(s.total_words));
     stats
 }
-
-#[allow(dead_code, clippy::type_complexity)]
-pub(crate) fn rollup_counts(
-    messages: &[Message],
-) -> (
-    Vec<Count>,
-    Vec<Count>,
-    Vec<HourCount>,
-    Vec<Count>,
-    Vec<Count>,
-) {
-    let by_sender = count_by_sender(messages);
-    let daily = daily_counts(messages);
-    let hourly = hourly_counts(messages);
-    let weekly = weekly_counts(messages);
-    let monthly = monthly_counts(messages);
-    (by_sender, daily, hourly, weekly, monthly)
-}
