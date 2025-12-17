@@ -436,7 +436,7 @@ pub(crate) fn person_stats(messages: &[Message]) -> Vec<PersonStat> {
     stats
 }
 
-#[allow(dead_code)]
+#[allow(dead_code, clippy::type_complexity)]
 pub(crate) fn rollup_counts(
     messages: &[Message],
 ) -> (
