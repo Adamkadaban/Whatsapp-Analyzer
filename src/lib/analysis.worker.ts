@@ -4,6 +4,7 @@
  */
 
 import init, { analyze_chat, init_panic_hook } from "../../pkg/chat_core_wasm.js";
+import type { Summary } from "./types";
 
 let initialized = false;
 
@@ -23,7 +24,7 @@ export type WorkerRequest = {
 };
 
 export type WorkerResponse =
-  | { id: number; type: "success"; result: unknown }
+  | { id: number; type: "success"; result: Summary }
   | { id: number; type: "error"; error: string };
 
 self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
