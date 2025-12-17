@@ -27,7 +27,7 @@ Client-side WhatsApp chat analytics with a React/Vite UI using Rust, Polars, and
 pnpm install
 
 # Build WASM package
-cd web/chat-core-wasm
+cd chat-core-wasm
 wasm-pack build --target web --out-dir ../pkg --out-name chat_core_wasm
 
 # Start dev server
