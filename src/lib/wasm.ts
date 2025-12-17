@@ -1,5 +1,6 @@
 import type { Summary } from "./types";
 import type { WorkerRequest, WorkerResponse } from "./analysis.worker";
+import { ANALYSIS_TOP_WORDS, ANALYSIS_TOP_EMOJIS } from "./constants";
 
 // Set to true to enable performance timing logs in the console.
 const DEBUG_TIMING = import.meta.env.DEV;
@@ -42,6 +43,29 @@ function getWorker(): Worker {
 	return worker;
 }
 
+/**
+ * Preload the WASM worker during browser idle time.
+ * This ensures the worker and WASM module are ready before the user uploads a file,
+ * making the first analysis feel faster.
+ */
+export function preloadWorker(): void {
+	if (typeof window !== "undefined" && "requestIdleCallback" in window) {
+		window.requestIdleCallback(
+			() => {
+				logTiming("[analysis] preloading worker on idle", {});
+				getWorker();
+			},
+			{ timeout: 5000 }
+		);
+	} else if (typeof window !== "undefined") {
+		// Fallback for browsers without requestIdleCallback (Safari)
+		setTimeout(() => {
+			logTiming("[analysis] preloading worker (setTimeout fallback)", {});
+			getWorker();
+		}, 1000);
+	}
+}
+
 export async function analyzeText(raw: string): Promise<Summary> {
 	const totalStart = performance.now();
 
@@ -60,7 +84,7 @@ export async function analyzeText(raw: string): Promise<Summary> {
 			reject,
 		});
 
-		const request: WorkerRequest = { id, type: "analyze", raw, topWords: 50, topEmojis: 50 };
+		const request: WorkerRequest = { id, type: "analyze", raw, topWords: ANALYSIS_TOP_WORDS, topEmojis: ANALYSIS_TOP_EMOJIS };
 		w.postMessage(request);
 	});
 }

@@ -9,6 +9,17 @@ import StatCard from "../components/StatCard";
 import { analyzeText, type Summary } from "../lib/wasm";
 import type { JourneyMessage } from "../lib/types";
 import { calcLongestStreak, type DailyDatum } from "../lib/streak";
+import { CHART_COLORS, SITE_URL } from "../lib/colors";
+import {
+  MAX_LEGEND_SENDERS,
+  MONTH_LABELS,
+  WEEKDAY_LABELS,
+  PROCESSING_SLOW_THRESHOLD_SEC,
+  PROCESSING_VERY_SLOW_THRESHOLD_SEC,
+  PDF_MAX_DIMENSION_PX,
+  PDF_MAX_SCALE,
+  PDF_HEIGHT_BUFFER_PX,
+} from "../lib/constants";
 
 // Enable performance timing logs only in dev mode.
 const DEBUG_TIMING = import.meta.env.DEV;
@@ -18,10 +29,7 @@ function logTiming(label: string, data: Record<string, unknown>) {
   }
 }
 
-const colors = ["#64d8ff", "#ff7edb", "#8c7bff", "#7cf9c0", "#ffb347", "#ff6b6b", "#ffd166", "#06d6a0", "#118ab2", "#ef476f"];
-const MAX_LEGEND_SENDERS = 6;
-const monthLabels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const weekdayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const colors = CHART_COLORS;
 
 type KpiDatum = { label: string; value: string; detail?: string };
 
@@ -235,7 +243,7 @@ export default function Dashboard() {
 
   const monthlyRadar = useMemo(() => {
     if (!summary) return [];
-    return monthLabels.map((label, idx) => {
+    return MONTH_LABELS.map((label, idx) => {
       const row: Record<string, number | string> = { label };
       summary.buckets_by_person.forEach((p) => {
         row[p.name] = p.monthly[idx];
@@ -246,7 +254,7 @@ export default function Dashboard() {
 
   const weekdayRadar = useMemo(() => {
     if (!summary) return [];
-    return weekdayLabels.map((label, idx) => {
+    return WEEKDAY_LABELS.map((label, idx) => {
       const row: Record<string, number | string> = { label };
       summary.buckets_by_person.forEach((p) => {
         row[p.name] = p.daily[idx];
@@ -257,9 +265,6 @@ export default function Dashboard() {
 
   const wordCloud = summary ? (filterStopwords ? summary.word_cloud : summary.word_cloud_no_stop) : [];
   const emojiCloud = summary?.emoji_cloud ?? [];
-  const _topPhrases = summary
-    ? (filterStopwords ? summary.top_phrases : summary.top_phrases_no_stop).slice(0, 15)
-    : [];
   const perPersonPhrases = summary
     ? (filterStopwords ? summary.per_person_phrases : summary.per_person_phrases_no_stop)
     : [];
@@ -360,7 +365,7 @@ export default function Dashboard() {
 
   const readTextWithFallback = async (file: File): Promise<{ text: string; encoding: string } | null> => {
     const prefix = `readTextWithFallback(${file.name})`;
-    const log = (...args: unknown[]) => console.info(prefix, ...args);
+    const log = (...args: unknown[]) => { if (DEBUG_TIMING) console.info(prefix, ...args); };
     const errors: unknown[] = [];
 
     const readWithFileReader = async (): Promise<ArrayBuffer | null> => {
@@ -697,9 +702,8 @@ export default function Dashboard() {
 
       // Capture dimensions and scale safely within jsPDF limits (max 14,400 px)
       const width = Math.ceil(node.scrollWidth);
-      const height = Math.ceil(node.scrollHeight + 80); // buffer for banner spacing
-      const maxDim = 14000;
-      const scale = Math.min(2, maxDim / Math.max(width, height)); // up to 2x for crispness
+      const height = Math.ceil(node.scrollHeight + PDF_HEIGHT_BUFFER_PX);
+      const scale = Math.min(PDF_MAX_SCALE, PDF_MAX_DIMENSION_PX / Math.max(width, height));
       const canvasWidth = Math.floor(width * scale);
       const canvasHeight = Math.floor(height * scale);
 
@@ -736,7 +740,7 @@ export default function Dashboard() {
       pdf.addImage(imgData, "PNG", 0, 0, canvasWidth, canvasHeight, undefined, "FAST");
 
       // Add a clickable link over the top-left logo area
-      const linkUrl = "https://wa.hackback.zip/";
+      const linkUrl = SITE_URL;
 
       // Measure the export banner in the source DOM to position the link accurately
       let linkX = 12;
@@ -781,9 +785,9 @@ export default function Dashboard() {
               <>
                 <div className="spinner" aria-hidden="true" />
                 <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 6 }}>
-                  {processingElapsed >= 30
+                  {processingElapsed >= PROCESSING_VERY_SLOW_THRESHOLD_SEC
                     ? "This is taking a while - you must text a lot!"
-                    : processingElapsed >= 10
+                    : processingElapsed >= PROCESSING_SLOW_THRESHOLD_SEC
                       ? "Just a few more seconds…"
                       : fileCount > 1
                         ? "Loading files…"
@@ -813,14 +817,14 @@ export default function Dashboard() {
         </div>
       )}
       {showColorModal && summary && (
-        <div className="loading-overlay" role="dialog" aria-modal="true">
+        <div className="loading-overlay" role="dialog" aria-modal="true" aria-labelledby="color-modal-title">
           <div className="card" style={{ maxWidth: 520, width: "90%", padding: 20, display: "grid", gap: 12 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div>
                 <div className="tag">Colors</div>
-                <h3 style={{ margin: "4px 0" }}>Configure user colors</h3>
+                <h3 id="color-modal-title" style={{ margin: "4px 0" }}>Configure user colors</h3>
               </div>
-              <button className="btn ghost" onClick={() => setShowColorModal(false)}>
+              <button className="btn ghost" onClick={() => setShowColorModal(false)} aria-label="Close color configuration">
                 Close
               </button>
             </div>
@@ -844,6 +848,7 @@ export default function Dashboard() {
                     type="color"
                     value={getColor(p.name, idx)}
                     onChange={(e) => setColorMap((prev) => ({ ...prev, [p.name]: e.target.value }))}
+                    aria-label={`Choose color for ${p.name}`}
                     style={{ width: 70, height: 32, border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8, background: "transparent" }}
                   />
                 </div>
@@ -856,7 +861,7 @@ export default function Dashboard() {
         <div style={{ display: "flex", justifyContent: "space-between", gap: "16px", alignItems: "center", flexWrap: "wrap" }}>
           <div>
             <div className="export-banner" aria-hidden={!exporting}>
-              <a href="https://wa.hackback.zip" target="_blank" rel="noreferrer" className="export-banner-link">
+              <a href={SITE_URL} target="_blank" rel="noreferrer" className="export-banner-link">
                 <span className="logo" style={{ fontSize: 18 }}>
                   <span style={{ color: "#25d366" }}>WA</span> Analyzer
                 </span>
@@ -908,7 +913,12 @@ export default function Dashboard() {
                   )}
                 </div>
                 <label className="switch">
-                  <input type="checkbox" checked={filterStopwords} onChange={(e) => setFilterStopwords(e.target.checked)} />
+                  <input 
+                    type="checkbox" 
+                    checked={filterStopwords} 
+                    onChange={(e) => setFilterStopwords(e.target.checked)}
+                    aria-label="Filter out stopwords from word statistics"
+                  />
                   <span className="slider" />
                 </label>
               </div>
@@ -1394,6 +1404,8 @@ export default function Dashboard() {
             </p>
             <div style={{ display: "grid", gap: 12 }}>
               <div
+                role="region"
+                aria-label="File drop zone"
                 onDrop={handleDrop}
                 onDragOver={handleDragOver}
                 onDragEnter={handleDragEnter}
@@ -1429,6 +1441,7 @@ export default function Dashboard() {
                       multiple
                       style={{ display: "none" }}
                       onChange={onFileChange}
+                      aria-label="Upload WhatsApp chat export file"
                     />
                   </label>
                   <span style={{ color: "var(--muted)", fontSize: 14 }}>
