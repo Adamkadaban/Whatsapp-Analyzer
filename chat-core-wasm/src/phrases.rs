@@ -234,6 +234,9 @@ pub(crate) fn emoji_cloud(messages: &[Message], take: usize) -> Vec<Count> {
     counts
 }
 
+/// Extract top phrases from messages.
+/// Note: `filter_stop` is currently unused - phrase detection requires all tokens
+/// for accurate n-gram PMI scoring. The param is kept for API consistency.
 pub(crate) fn top_phrases(messages: &[Message], take: usize, _filter_stop: bool) -> Vec<Count> {
     const MAX_N: usize = 5;
     const PMI_THRESHOLD: f64 = 0.1;
@@ -251,6 +254,7 @@ pub(crate) fn top_phrases(messages: &[Message], take: usize, _filter_stop: bool)
         if is_media_omitted_message(text) {
             continue;
         }
+        // Always tokenize without stop-word filtering for phrase detection
         let tokens = tokenize(text, false, stop);
         if tokens.is_empty() {
             continue;
@@ -386,6 +390,8 @@ pub(crate) fn top_phrases(messages: &[Message], take: usize, _filter_stop: bool)
         .collect()
 }
 
+/// Extract top phrases per person.
+/// Note: `filter_stop` is currently unused - phrase detection requires all tokens.
 pub(crate) fn per_person_phrases(
     messages: &[Message],
     take: usize,
@@ -406,6 +412,7 @@ pub(crate) fn per_person_phrases(
         if is_media_omitted_message(&m.text) {
             continue;
         }
+        // Always tokenize without stop-word filtering for phrase detection
         let tokens = tokenize(&m.text, false, stop);
         if tokens.len() < 2 {
             continue;
