@@ -5,7 +5,10 @@ import Navbar from "./Navbar";
 describe("Navbar", () => {
   it("renders links and highlights active route", () => {
     render(
-      <MemoryRouter initialEntries={["/dashboard"]}>
+      <MemoryRouter
+        initialEntries={["/dashboard"]}
+        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+      >
         <Navbar />
       </MemoryRouter>
     );
