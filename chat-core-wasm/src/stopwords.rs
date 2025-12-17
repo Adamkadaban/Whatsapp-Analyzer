@@ -1,6 +1,6 @@
-// English stopwords sourced from rust-bert (scikit-learn list, BSD-3-Clause).
-// Reference: references/rust-bert/src/pipelines/keywords_extraction/stopwords.rs
-// License: BSD 3-Clause (retained from original source).
+// English stopwords sourced from rust-bert
+// Reference: https://github.com/guillaume-be/rust-bert/blob/main/src/pipelines/keywords_extraction/stopwords.rs
+// License: Apache 2.0.
 pub const ENGLISH_STOPWORDS: [&str; 318] = [
     "a",
     "about",
