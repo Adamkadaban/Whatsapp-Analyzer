@@ -75,14 +75,20 @@ pub(crate) fn pick_dominant_color(freq: &HashMap<String, u32>) -> Option<String>
     color_hex_for_word(best_word).map(|hex| hex.to_string())
 }
 
+/// Languages supported for stopword filtering.
+const SUPPORTED_LANGUAGES: [Language; 3] =
+    [Language::English, Language::Portuguese, Language::Spanish];
+
 pub(crate) fn stopwords_set() -> &'static HashSet<&'static str> {
     static STOPWORDS: OnceCell<HashSet<&'static str>> = OnceCell::new();
     STOPWORDS.get_or_init(|| {
-        let mut set: HashSet<&'static str> = Spark::stopwords(Language::English)
-            .unwrap_or_default()
-            .iter()
-            .copied()
-            .collect();
+        let mut set: HashSet<&'static str> = HashSet::new();
+        // Merge stopwords from all supported languages
+        for lang in SUPPORTED_LANGUAGES {
+            if let Some(words) = Spark::stopwords(lang) {
+                set.extend(words.iter().copied());
+            }
+        }
         for extra in WHATSAPP_EXTRAS {
             set.insert(extra);
         }
