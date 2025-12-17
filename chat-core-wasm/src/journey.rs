@@ -2,7 +2,6 @@ use std::collections::HashMap;
 
 use crate::parsing::Message;
 use crate::sentiment::sentiment_score;
-use crate::text::extract_emojis;
 use crate::text::CONVERSATION_GAP_MINUTES;
 use crate::types::{Journey, JourneyMessage, JourneyMoment};
 
@@ -27,27 +26,54 @@ fn find_interesting_moments(
     let mut scored: Vec<(usize, f32, f32)> = Vec::new();
 
     for (i, msg) in messages.iter().enumerate() {
-        let (sentiment, _) = sentiment_score(&msg.text);
-        let text_len = msg.text.len() as f32;
-        let exclamation_count = msg.text.matches('!').count() as f32;
-        let question_count = msg.text.matches('?').count() as f32;
-        let emoji_count = extract_emojis(&msg.text).len() as f32;
-        let caps_ratio = if !msg.text.is_empty() {
-            msg.text.chars().filter(|c| c.is_uppercase()).count() as f32 / msg.text.len() as f32
+        let text = msg.text.trim();
+        if text.len() < 6 || text.contains("omitted") || text.contains("deleted") {
+            continue;
+        }
+
+        let features = text_features(text);
+        let (sentiment, _) = sentiment_score(text);
+
+        // Skip clearly spammy/technical drops.
+        if features.url_count > 2 {
+            continue;
+        }
+        if features.symbol_ratio > 0.45 && features.word_count < 80 {
+            continue;
+        }
+
+        let length_score = if features.word_count > 8 {
+            (features.word_count as f32).ln().min(3.5)
         } else {
             0.0
         };
 
-        if text_len < 10.0 || msg.text.contains("omitted") || msg.text.contains("deleted") {
-            continue;
+        let diversity_score = (features.unique_ratio * 3.0).min(2.5);
+        let sentiment_score_abs = sentiment.abs() * 2.6;
+        let expression_score = (features.emoji_count as f32) * 0.35
+            + (features.exclamation_count as f32) * 0.35
+            + (features.question_count as f32) * 0.25
+            + features.caps_ratio * 1.5;
+
+        let mut penalty = 0.0;
+        penalty += (features.symbol_ratio * 3.5).min(2.5);
+        penalty += (features.digit_ratio * 3.0).min(2.0);
+        if features.url_count > 0 {
+            penalty += 0.8 + 0.4 * (features.url_count as f32 - 1.0).max(0.0);
+        }
+        if features.word_count > 120 && sentiment.abs() < 0.2 {
+            penalty += 1.5;
+        }
+        if features.word_count > 200 && features.symbol_ratio > 0.25 {
+            penalty += 1.5;
         }
 
-        let interest = sentiment.abs() * 2.0
-            + (text_len / 100.0).min(3.0)
-            + exclamation_count * 0.5
-            + question_count * 0.3
-            + emoji_count * 0.3
-            + caps_ratio * 2.0;
+        let interest = sentiment_score_abs + length_score + diversity_score + expression_score - penalty;
+
+        // Require a minimum meaningful threshold and some words.
+        if features.word_count < 6 || interest < 1.0 {
+            continue;
+        }
 
         scored.push((i, interest, sentiment));
     }
@@ -156,13 +182,16 @@ fn find_interesting_moments(
             .collect();
 
         let main_msg = &messages[idx];
-        let title = if sentiment > 0.3 {
+        let main_features = text_features(main_msg.text.trim());
+        let title = if main_features.url_count > 0 || main_features.symbol_ratio > 0.35 {
+            "A technical share".to_string()
+        } else if sentiment > 0.35 {
             "A joyful moment".to_string()
-        } else if sentiment < -0.3 {
+        } else if sentiment < -0.35 {
             "A heartfelt exchange".to_string()
         } else if main_msg.text.contains('?') {
             "A curious conversation".to_string()
-        } else if main_msg.text.len() > 200 {
+        } else if main_msg.text.len() > 220 {
             "A meaningful message".to_string()
         } else {
             "A memorable moment".to_string()
@@ -180,6 +209,94 @@ fn find_interesting_moments(
     }
 
     moments
+}
+
+#[derive(Default)]
+struct TextFeatures {
+    word_count: usize,
+    unique_ratio: f32,
+    emoji_count: usize,
+    exclamation_count: usize,
+    question_count: usize,
+    caps_ratio: f32,
+    symbol_ratio: f32,
+    digit_ratio: f32,
+    url_count: usize,
+}
+
+fn text_features(text: &str) -> TextFeatures {
+    if text.is_empty() {
+        return TextFeatures::default();
+    }
+
+    let mut alpha = 0usize;
+    let mut digit = 0usize;
+    let mut symbol = 0usize;
+    let mut emoji_count = 0usize;
+    let mut caps = 0usize;
+    let mut exclamation = 0usize;
+    let mut question = 0usize;
+
+    let words: Vec<&str> = text
+        .split_whitespace()
+        .filter(|w| !w.is_empty())
+        .collect();
+    let unique_words: std::collections::HashSet<&str> = words.iter().copied().collect();
+
+    for ch in text.chars() {
+        if ch.is_ascii_alphabetic() {
+            alpha += 1;
+            if ch.is_uppercase() {
+                caps += 1;
+            }
+        } else if ch.is_ascii_digit() {
+            digit += 1;
+        } else if ch == '!' {
+            exclamation += 1;
+            symbol += 1;
+        } else if ch == '?' {
+            question += 1;
+            symbol += 1;
+        } else if ch.is_whitespace() {
+            // ignore
+        } else {
+            // crude emoji detection: anything outside ASCII range
+            if !ch.is_ascii() {
+                emoji_count += 1;
+            }
+            symbol += 1;
+        }
+    }
+
+    let total = alpha + digit + symbol;
+    let symbol_ratio = if total == 0 { 0.0 } else { symbol as f32 / total as f32 };
+    let digit_ratio = if total == 0 { 0.0 } else { digit as f32 / total as f32 };
+    let caps_ratio = if (alpha + digit + symbol) == 0 {
+        0.0
+    } else {
+        caps as f32 / (alpha + digit + symbol) as f32
+    };
+
+    let url_count = words
+        .iter()
+        .filter(|w| w.starts_with("http://") || w.starts_with("https://") || w.starts_with("www."))
+        .count();
+
+    TextFeatures {
+        word_count: words.len(),
+        unique_ratio: if words.is_empty() {
+            0.0
+        } else {
+            unique_words.len() as f32 / words.len() as f32
+        },
+        emoji_count,
+        exclamation_count: exclamation,
+        question_count: question,
+        caps_ratio,
+        symbol_ratio,
+        digit_ratio,
+        url_count,
+    }
 }
 
 pub(crate) fn build_journey(messages: &[Message]) -> Option<Journey> {
