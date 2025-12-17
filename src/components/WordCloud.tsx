@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import cloud from "d3-cloud";
+import { CHART_COLORS, WORD_CLOUD_FONT } from "../lib/colors";
 
 export type CloudWord = {
   label: string;
   value: number;
 };
 
-const COLORS = ["#64d8ff", "#ff7edb", "#8c7bff", "#7cf9c0", "#ffb347", "#ff6b6b", "#ffd166", "#06d6a0", "#118ab2", "#ef476f"];
-const FONT_FAMILY = "'Inter', system-ui, -apple-system, sans-serif";
+const COLORS = CHART_COLORS;
+const FONT_FAMILY = WORD_CLOUD_FONT;
 
 export default function WordCloud({
   words,
