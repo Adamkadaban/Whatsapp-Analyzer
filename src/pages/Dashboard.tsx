@@ -41,38 +41,25 @@ function formatMessageTime(timestamp: string): string {
 
 /** WhatsApp-style message bubble */
 function MessageBubble({ message, senderColor }: { message: JourneyMessage; senderColor: string }) {
+  const bubbleStyle = {
+    maxWidth: "80%",
+    padding: "8px 12px",
+    borderRadius: message.is_you ? "16px 16px 4px 16px" : "16px 16px 16px 4px",
+    background: message.is_you
+      ? "linear-gradient(135deg, #005c4b, #004d40)"
+      : "rgba(255,255,255,0.08)",
+    border: "1px solid rgba(255,255,255,0.06)",
+    position: "relative" as const,
+  };
+
   return (
-    <div
-      style={{
-        display: "flex",
-        justifyContent: message.is_you ? "flex-end" : "flex-start",
-        marginBottom: 8,
-      }}
-    >
-      <div
-        style={{
-          maxWidth: "80%",
-          padding: "8px 12px",
-          borderRadius: message.is_you ? "16px 16px 4px 16px" : "16px 16px 16px 4px",
-          background: message.is_you
-            ? "linear-gradient(135deg, #005c4b, #004d40)"
-            : "rgba(255,255,255,0.08)",
-          border: "1px solid rgba(255,255,255,0.06)",
-          position: "relative",
-        }}
-      >
-        <div style={{ fontWeight: 600, fontSize: 13, color: senderColor, marginBottom: 2 }}>
+    <div className={`flex-center mb-sm ${message.is_you ? "justify-end" : ""}`}>
+      <div style={bubbleStyle}>
+        <div className="journey-message-sender" style={{ color: senderColor }}>
           {message.sender}
         </div>
-        <div style={{ fontSize: 14, lineHeight: 1.4, wordBreak: "break-word" }}>{message.text}</div>
-        <div
-          style={{
-            fontSize: 11,
-            color: "rgba(255,255,255,0.5)",
-            marginTop: 4,
-            textAlign: "right",
-          }}
-        >
+        <div className="journey-message-text">{message.text}</div>
+        <div className="journey-message-meta text-right">
           {formatMessageTime(message.timestamp)}
         </div>
       </div>
@@ -777,14 +764,14 @@ export default function Dashboard() {
   }
 
   return (
-    <main ref={dashboardRef} style={{ position: "relative" }}>
+    <main ref={dashboardRef} className="relative">
       {(processing || isReady || analyzing) && (
         <div className="loading-overlay" role="status" aria-live="polite">
           <div className="loading-card">
             {processing && (
               <>
                 <div className="spinner" aria-hidden="true" />
-                <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 6 }}>
+                <div className="font-bold text-xl mb-sm">
                   {processingElapsed >= PROCESSING_VERY_SLOW_THRESHOLD_SEC
                     ? "This is taking a while - you must text a lot!"
                     : processingElapsed >= PROCESSING_SLOW_THRESHOLD_SEC
@@ -793,21 +780,21 @@ export default function Dashboard() {
                         ? "Loading files…"
                         : "Loading file…"}
                 </div>
-                <div style={{ color: "var(--muted)" }}>{fileName}</div>
+                <div className="text-muted">{fileName}</div>
               </>
             )}
             {analyzing && (
               <>
                 <div className="spinner" aria-hidden="true" />
-                <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 6 }}>Analyzing your chat…</div>
-                <div style={{ color: "var(--muted)" }}>This will only take a moment.</div>
+                <div className="font-bold text-xl mb-sm">Analyzing your chat…</div>
+                <div className="text-muted">This will only take a moment.</div>
               </>
             )}
             {isReady && (
               <>
-                <div style={{ fontSize: 32, marginBottom: 12 }}>📄</div>
-                <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 6 }}>{fileName}</div>
-                <div style={{ color: "var(--muted)", marginBottom: 16 }}>Ready to analyze</div>
+                <div className="text-3xl mb-md">📄</div>
+                <div className="font-bold text-xl mb-sm">{fileName}</div>
+                <div className="text-muted mb-lg">Ready to analyze</div>
                 <button className="btn" onClick={handleAnalyze}>
                   Analyze
                 </button>
@@ -818,38 +805,32 @@ export default function Dashboard() {
       )}
       {showColorModal && summary && (
         <div className="loading-overlay" role="dialog" aria-modal="true" aria-labelledby="color-modal-title">
-          <div className="card" style={{ maxWidth: 520, width: "90%", padding: 20, display: "grid", gap: 12 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div className="card color-modal grid-gap-md">
+            <div className="color-modal-header">
               <div>
                 <div className="tag">Colors</div>
-                <h3 id="color-modal-title" style={{ margin: "4px 0" }}>Configure user colors</h3>
+                <h3 id="color-modal-title" className="color-modal-title">Configure user colors</h3>
               </div>
               <button className="btn ghost" onClick={() => setShowColorModal(false)} aria-label="Close color configuration">
                 Close
               </button>
             </div>
-            <div style={{ display: "grid", gap: 10 }}>
+            <div className="grid-gap-sm">
               {summary.buckets_by_person.map((p, idx) => (
-                <div key={p.name} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div key={p.name} className="color-picker-row">
+                  <div className="color-picker-label">
                     <span
-                      style={{
-                        width: 18,
-                        height: 18,
-                        borderRadius: 6,
-                        background: getColor(p.name, idx),
-                        border: "1px solid rgba(255,255,255,0.15)",
-                        display: "inline-block",
-                      }}
+                      className="color-swatch"
+                      style={{ background: getColor(p.name, idx), width: 18, height: 18, borderRadius: 6 }}
                     />
-                    <span style={{ fontWeight: 600 }}>{p.name}</span>
+                    <span className="font-semibold">{p.name}</span>
                   </div>
                   <input
                     type="color"
                     value={getColor(p.name, idx)}
                     onChange={(e) => setColorMap((prev) => ({ ...prev, [p.name]: e.target.value }))}
                     aria-label={`Choose color for ${p.name}`}
-                    style={{ width: 70, height: 32, border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8, background: "transparent" }}
+                    className="color-input"
                   />
                 </div>
               ))}
@@ -857,57 +838,39 @@ export default function Dashboard() {
           </div>
         </div>
       )}
-      <section className="container" style={{ display: "grid", gap: "24px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", gap: "16px", alignItems: "center", flexWrap: "wrap" }}>
+      <section className="container grid-gap-2xl">
+        <div className="dashboard-header">
           <div>
             <div className="export-banner" aria-hidden={!exporting}>
               <a href={SITE_URL} target="_blank" rel="noreferrer" className="export-banner-link">
-                <span className="logo" style={{ fontSize: 18 }}>
-                  <span style={{ color: "#25d366" }}>WA</span> Analyzer
+                <span className="logo dashboard-logo">
+                  <span className="text-whatsapp">WA</span> Analyzer
                 </span>
                 <span className="export-tagline">WhatsApp insights in seconds</span>
               </a>
             </div>
-            <h2 style={{ margin: "8px 0" }}>Dashboard</h2>
+            <h2 className="dashboard-title">Dashboard</h2>
             {!hasData && (
-              <p style={{ color: "var(--muted)", margin: 0 }}>
+              <p className="dashboard-subtitle">
                 Drop your exported WhatsApp .txt.
               </p>
             )}
           </div>
           {hasData && (
-            <div style={{ display: "flex", gap: 12, alignItems: "center" }} className="export-hide">
+            <div className="export-controls export-hide">
               <div className="switch-row">
-                <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 6 }}>
+                <div className="export-dropdown">
                   <span
                     onMouseEnter={() => setShowStopTooltip(true)}
                     onMouseLeave={() => setShowStopTooltip(false)}
                     onFocus={() => setShowStopTooltip(true)}
                     onBlur={() => setShowStopTooltip(false)}
-                    style={{ display: "inline-flex", alignItems: "center" }}
+                    className="inline-flex"
                   >
                     Filter stop-words
                   </span>
                   {showStopTooltip && (
-                    <div
-                      role="tooltip"
-                      style={{
-                        position: "absolute",
-                        top: "calc(100% + 6px)",
-                        left: 0,
-                        minWidth: 260,
-                        maxWidth: 320,
-                        padding: "10px 12px",
-                        borderRadius: 12,
-                        background: "linear-gradient(135deg, #0d1117, #131a24)",
-                        border: "1px solid rgba(255,255,255,0.12)",
-                        boxShadow: "0 12px 32px rgba(0,0,0,0.35)",
-                        color: "#fff",
-                        fontSize: 13,
-                        lineHeight: 1.4,
-                        zIndex: 10,
-                      }}
-                    >
+                    <div role="tooltip" className="stopword-tooltip">
                       Stop-words are common filler words ("the", "and", "is", "you") we drop so the interesting terms pop in the word stats.
                     </div>
                   )}
@@ -936,11 +899,11 @@ export default function Dashboard() {
         </div>
         {hasData && (
           <>
-            {exportError && <div style={{ color: "#ff7edb" }}>{exportError}</div>}
-            <div className="card" style={{ display: "grid", gap: 12 }}>
+            {exportError && <div className="error-text">{exportError}</div>}
+            <div className="card grid-gap-md">
               <div className="tag">Timeline</div>
-              <h3 style={{ margin: 0 }}>Chat timeline</h3>
-              <div style={{ height: 360, width: "100%" }}>
+              <h3 className="card-header">Chat timeline</h3>
+              <div className="chart-container-xl chart-full-width">
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={timelineData} margin={{ left: -12, right: 8 }}>
                     <defs>
@@ -957,49 +920,37 @@ export default function Dashboard() {
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
-              <div style={{ color: "var(--muted)", fontSize: 12 }}>Message volume over time.</div>
+              <div className="text-muted text-xs">Message volume over time.</div>
             </div>
 
-            <div className="card" style={{ display: "grid", gap: 12 }}>
+            <div className="card grid-gap-md">
               <div className="tag">People</div>
-              <h3 style={{ margin: 0 }}>Per-person stats</h3>
-              <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 600 }}>
+              <h3 className="card-header">Per-person stats</h3>
+              <div className="stats-table-wrapper">
+                <table className="stats-table">
                   <thead>
-                    <tr style={{ color: "var(--muted)", textAlign: "left" }}>
-                      <th style={{ padding: "8px 6px" }}>Person</th>
-                      <th style={{ padding: "8px 6px" }}>Total words</th>
-                      <th style={{ padding: "8px 6px" }}>Unique words</th>
-                      <th style={{ padding: "8px 6px" }}>Avg words/msg</th>
-                      <th style={{ padding: "8px 6px" }}>Longest msg (words)</th>
-                      <th style={{ padding: "8px 6px" }}>Top emojis</th>
+                    <tr>
+                      <th>Person</th>
+                      <th>Total words</th>
+                      <th>Unique words</th>
+                      <th>Avg words/msg</th>
+                      <th>Longest msg (words)</th>
+                      <th>Top emojis</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {summary?.person_stats.map((p, idx) => (
-                      <tr key={p.name} style={{ background: idx % 2 === 0 ? "rgba(255,255,255,0.02)" : "transparent" }}>
-                        <td style={{ padding: "8px 6px", fontWeight: 600 }}>{p.name}</td>
-                        <td style={{ padding: "8px 6px" }}>{p.total_words.toLocaleString()}</td>
-                        <td style={{ padding: "8px 6px" }}>{p.unique_words.toLocaleString()}</td>
-                        <td style={{ padding: "8px 6px" }}>{p.average_words_per_message.toFixed(1)}</td>
-                        <td style={{ padding: "8px 6px" }}>{p.longest_message_words}</td>
-                        <td style={{ padding: "8px 6px" }}>
-                          <div style={{ 
-                            display: "grid", 
-                            gridTemplateColumns: "repeat(5, auto)", 
-                            gap: 6, 
-                            justifyContent: "start",
-                            width: "fit-content"
-                          }}>
+                    {summary?.person_stats.map((p) => (
+                      <tr key={p.name}>
+                        <td className="font-semibold">{p.name}</td>
+                        <td>{p.total_words.toLocaleString()}</td>
+                        <td>{p.unique_words.toLocaleString()}</td>
+                        <td>{p.average_words_per_message.toFixed(1)}</td>
+                        <td>{p.longest_message_words}</td>
+                        <td>
+                          <div className="emoji-list emoji-grid-5">
                             {p.top_emojis.slice(0, 10).map((e) => (
-                              <span key={e.label} style={{ 
-                                padding: "4px 8px", 
-                                borderRadius: 8, 
-                                background: "rgba(255,255,255,0.05)",
-                                fontSize: 14,
-                                whiteSpace: "nowrap"
-                              }}>
-                                {e.label} <span style={{ color: "var(--muted)" }}>×{e.value}</span>
+                              <span key={e.label} className="emoji-badge">
+                                {e.label} <span className="text-muted">×{e.value}</span>
                               </span>
                             ))}
                           </div>
@@ -1020,7 +971,7 @@ export default function Dashboard() {
 
             <div className="grid chart-grid">
               <ChartCard title="Hourly rhythm">
-                <div style={{ height: 240 }}>
+                <div className="chart-container-sm">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={hourlyStacked} barGap={-1}>
                       <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
@@ -1037,7 +988,7 @@ export default function Dashboard() {
               </ChartCard>
 
               <ChartCard title="Top senders" subtitle="Messages by person">
-                <div style={{ height: 240 }}>
+                <div className="chart-container-sm">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie data={senderData} dataKey="value" nameKey="name" innerRadius={60} outerRadius={90} paddingAngle={2}>
@@ -1053,7 +1004,7 @@ export default function Dashboard() {
               </ChartCard>
 
               <ChartCard title="Conversation starters" subtitle="First message after inactivity">
-                <div style={{ height: 260 }}>
+                <div className="chart-container-md">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={conversationStartersData} margin={{ left: -10, right: 10 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
@@ -1061,7 +1012,7 @@ export default function Dashboard() {
                       <YAxis tick={{ fill: "var(--muted)", fontSize: 12 }} axisLine={false} tickLine={false} allowDecimals={false} />
                       <Tooltip contentStyle={{ background: "#0a0b0f", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 12 }} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
                       <Bar dataKey="value" name="Starts" radius={[6, 6, 0, 0]} fill="#7cf9c0">
-                        <LabelList dataKey="name" position="top" fill="var(--muted)" style={{ fontSize: 12 }} />
+                        <LabelList dataKey="name" position="top" fill="var(--muted)" fontSize={12} />
                         {conversationStartersData.map((entry, index) => (
                           <Cell key={entry.name} fill={getColor(entry.name, index)} />
                         ))}
@@ -1072,7 +1023,7 @@ export default function Dashboard() {
               </ChartCard>
 
               <ChartCard title="Monthly footprint">
-                <div style={{ height: 280 }}>
+                <div className="chart-container-lg">
                   <ResponsiveContainer width="100%" height="100%">
                     <RadarChart data={monthlyRadar} outerRadius={showLegend ? 90 : 110}>
                       <PolarGrid stroke="rgba(255,255,255,0.08)" />
@@ -1089,7 +1040,7 @@ export default function Dashboard() {
               </ChartCard>
 
               <ChartCard title="Weekday footprint">
-                <div style={{ height: 280 }}>
+                <div className="chart-container-lg">
                   <ResponsiveContainer width="100%" height="100%">
                     <RadarChart data={weekdayRadar} outerRadius={showLegend ? 90 : 110}>
                       <PolarGrid stroke="rgba(255,255,255,0.08)" />
@@ -1109,7 +1060,7 @@ export default function Dashboard() {
             {hasSentiment && (
               <div className="grid chart-grid">
                 <ChartCard title="Mood lanes by person" subtitle="Daily mean sentiment (−1 to 1)">
-                  <div style={{ height: 260 }}>
+                  <div className="chart-container-md">
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={sentimentLaneData} margin={{ left: -4, right: 8 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
@@ -1134,7 +1085,7 @@ export default function Dashboard() {
                 </ChartCard>
 
                 <ChartCard title="Polarity mix per person" subtitle="Share of positive / neutral / negative messages">
-                  <div style={{ height: 260 }}>
+                  <div className="chart-container-md">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart
                         data={sentimentStacked}
@@ -1172,7 +1123,7 @@ export default function Dashboard() {
                 </ChartCard>
 
                 <ChartCard title="Overall mood drift" subtitle="Weighted by message volume">
-                  <div style={{ height: 240 }}>
+                  <div className="chart-container-sm">
                     <ResponsiveContainer width="100%" height="100%">
                       <AreaChart data={sentimentTimeline} margin={{ left: -8, right: 8 }}>
                         <defs>
@@ -1193,50 +1144,29 @@ export default function Dashboard() {
               </div>
             )}
 
-            <div style={{ display: "grid", gap: 16 }}>
-              <div className="card" style={{ display: "grid", gap: 10 }}>
+            <div className="grid-gap-lg">
+              <div className="card grid-gap-sm">
                 <div className="tag">By person</div>
-                <h3 style={{ margin: 0 }}>Top phrases per sender</h3>
+                <h3 className="card-header">Top phrases per sender</h3>
                 {perPersonPhrases.length === 0 ? (
-                  <div style={{ color: "var(--muted)" }}>No phrases yet.</div>
+                  <div className="text-muted">No phrases yet.</div>
                 ) : (
-                  <div style={{ display: "grid", gap: 10 }}>
+                  <div className="phrases-grid">
                     {perPersonPhrases.map((person) => (
-                      <div
-                        key={person.name}
-                        style={{
-                          display: "grid",
-                          gap: 6,
-                          padding: "10px 12px",
-                          borderRadius: 12,
-                          background: "rgba(255,255,255,0.02)",
-                          border: "1px solid rgba(255,255,255,0.05)",
-                        }}
-                      >
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-                          <span style={{ fontWeight: 700 }}>{person.name}</span>
-                          <span style={{ color: "var(--muted)", fontSize: 12 }}>Top {Math.min(person.phrases.length, 5)}</span>
+                      <div key={person.name} className="phrase-person-card">
+                        <div className="phrase-person-header">
+                          <span className="font-bold">{person.name}</span>
+                          <span className="text-muted text-xs">Top {Math.min(person.phrases.length, 5)}</span>
                         </div>
                         {person.phrases.length === 0 ? (
-                          <span style={{ color: "var(--muted)", fontSize: 13 }}>No phrases</span>
+                          <span className="text-muted text-sm">No phrases</span>
                         ) : (
-                          <div style={{ display: "grid", gap: 6 }}>
+                          <div className="phrase-list">
                             {person.phrases.slice(0, 5).map((p, idx) => (
-                              <div
-                                key={p.label + idx}
-                                style={{
-                                  display: "grid",
-                                  gridTemplateColumns: "auto 1fr auto",
-                                  gap: 8,
-                                  padding: "6px 8px",
-                                  borderRadius: 10,
-                                  background: "rgba(255,255,255,0.02)",
-                                  border: "1px solid rgba(255,255,255,0.04)",
-                                }}
-                              >
-                                <span style={{ color: "var(--muted)", fontWeight: 600 }}>#{idx + 1}</span>
-                                <span style={{ fontWeight: 600 }}>{p.label}</span>
-                                <span style={{ textAlign: "right", color: "var(--muted)" }}>{p.value.toLocaleString()}</span>
+                              <div key={p.label + idx} className="phrase-item">
+                                <span className="text-muted font-semibold">#{idx + 1}</span>
+                                <span className="font-semibold">{p.label}</span>
+                                <span className="text-right text-muted">{p.value.toLocaleString()}</span>
                               </div>
                             ))}
                           </div>
@@ -1246,80 +1176,62 @@ export default function Dashboard() {
                   </div>
                 )}
               </div>
-              <div className="card" style={{ display: "grid", gap: 10, minHeight: 320 }}>
+              <div className="card grid-gap-sm min-h-card">
                 <div className="tag">Word cloud</div>
-                <h3 style={{ margin: 0 }}>Most common words</h3>
+                <h3 className="card-header">Most common words</h3>
                 <WordCloud words={wordCloud} colors={colors} height={320} />
               </div>
-              <div className="card" style={{ display: "grid", gap: 10, minHeight: 320 }}>
+              <div className="card grid-gap-sm min-h-card">
                 <div className="tag">Emoji cloud</div>
-                <h3 style={{ margin: 0 }}>Most used emojis</h3>
+                <h3 className="card-header">Most used emojis</h3>
                 <EmojiCloud words={emojiCloud} height={320} />
               </div>
             </div>
 
             {/* Journey Through Your Messages */}
             {summary?.journey && (
-              <div className="card" style={{ marginTop: 24 }}>
-                <h2 style={{ margin: "0 0 24px 0", fontSize: 28, fontWeight: 700 }}>
+              <div className="card journey-section">
+                <h2 className="journey-title">
                   Journey Through Your Messages
                 </h2>
 
                 {/* Overview stats */}
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    gap: 32,
-                    marginBottom: 32,
-                    padding: "20px 32px",
-                    background: "rgba(255,255,255,0.03)",
-                    borderRadius: 16,
-                    border: "1px solid rgba(255,255,255,0.06)",
-                  }}
-                >
-                  <div style={{ textAlign: "center", display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
-                    <div style={{ fontSize: 32, fontWeight: 700, color: "#64d8ff" }}>
+                <div className="journey-highlights">
+                  <div className="flex-col-end">
+                    <div className="journey-highlight-value text-primary">
                       {summary.journey.total_messages.toLocaleString()}
                     </div>
-                    <div style={{ color: "var(--muted)", fontSize: 13 }}>messages</div>
+                    <div className="journey-highlight-label">messages</div>
                   </div>
-                  <div style={{ textAlign: "center", display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
-                    <div style={{ fontSize: 32, fontWeight: 700, color: "#ff7edb" }}>
+                  <div className="flex-col-end">
+                    <div className="journey-highlight-value text-accent">
                       {summary.journey.total_days.toLocaleString()}
                     </div>
-                    <div style={{ color: "var(--muted)", fontSize: 13 }}>days</div>
+                    <div className="journey-highlight-label">days</div>
                   </div>
-                  <div style={{ textAlign: "center", display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
-                    <div style={{ fontSize: 32, fontWeight: 700, color: "var(--text)", whiteSpace: "nowrap" }}>
+                  <div className="flex-col-end">
+                    <div className="journey-highlight-value nowrap">
                       {summary.journey.first_day}
                     </div>
-                    <div style={{ color: "var(--muted)", fontSize: 13 }}>first message</div>
+                    <div className="journey-highlight-label">first message</div>
                   </div>
-                  <div style={{ textAlign: "center", display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
-                    <div style={{ fontSize: 32, fontWeight: 700, color: "var(--text)", whiteSpace: "nowrap" }}>
+                  <div className="flex-col-end">
+                    <div className="journey-highlight-value nowrap">
                       {summary.journey.last_day}
                     </div>
-                    <div style={{ color: "var(--muted)", fontSize: 13 }}>last message</div>
+                    <div className="journey-highlight-label">last message</div>
                   </div>
                 </div>
 
                 {/* First message */}
-                <div style={{ marginBottom: 32 }}>
-                  <h3 style={{ margin: "0 0 12px 0", fontSize: 18 }}>
+                <div className="journey-subsection">
+                  <h3 className="journey-subsection-title">
                     Where it all began
                   </h3>
-                  <p style={{ color: "var(--muted)", margin: "0 0 12px 0", fontSize: 14 }}>
+                  <p className="journey-subsection-desc">
                     Your conversation started with:
                   </p>
-                  <div
-                    style={{
-                      background: "rgba(255,255,255,0.02)",
-                      borderRadius: 16,
-                      padding: 16,
-                      border: "1px solid rgba(255,255,255,0.06)",
-                    }}
-                  >
+                  <div className="journey-timeline">
                     {summary.journey.first_messages.map((msg, idx) => (
                       <MessageBubble
                         key={idx}
@@ -1332,24 +1244,16 @@ export default function Dashboard() {
 
                 {/* Interesting moments */}
                 {summary.journey.interesting_moments.length > 0 && (
-                  <div style={{ marginBottom: 32 }}>
-                    <h3 style={{ margin: "0 0 16px 0", fontSize: 18 }}>
+                  <div className="journey-subsection">
+                    <h3 className="journey-moments-title">
                       Memorable moments
                     </h3>
-                    <div style={{ display: "grid", gap: 20 }}>
+                    <div className="grid-gap-xl">
                       {summary.journey.interesting_moments.map((moment, idx) => (
-                        <div
-                          key={idx}
-                          style={{
-                            background: "rgba(255,255,255,0.02)",
-                            borderRadius: 16,
-                            padding: 16,
-                            border: "1px solid rgba(255,255,255,0.06)",
-                          }}
-                        >
-                          <div style={{ marginBottom: 12 }}>
-                            <div style={{ fontWeight: 700, fontSize: 16 }}>{moment.title}</div>
-                            <div style={{ color: "var(--muted)", fontSize: 13 }}>{moment.description}</div>
+                        <div key={idx} className="journey-moment-card" style={{ borderColor: colors[idx % colors.length] }}>
+                          <div className="journey-moment-header">
+                            <div className="journey-moment-title">{moment.title}</div>
+                            <div className="journey-moment-desc">{moment.description}</div>
                           </div>
                           <div>
                             {moment.messages.map((msg, msgIdx) => (
@@ -1368,20 +1272,13 @@ export default function Dashboard() {
 
                 {/* Last message */}
                 <div>
-                  <h3 style={{ margin: "0 0 12px 0", fontSize: 18 }}>
+                  <h3 className="journey-subsection-title">
                     The latest chapter
                   </h3>
-                  <p style={{ color: "var(--muted)", margin: "0 0 12px 0", fontSize: 14 }}>
+                  <p className="journey-subsection-desc">
                     Your most recent messages:
                   </p>
-                  <div
-                    style={{
-                      background: "rgba(255,255,255,0.02)",
-                      borderRadius: 16,
-                      padding: 16,
-                      border: "1px solid rgba(255,255,255,0.06)",
-                    }}
-                  >
+                  <div className="journey-timeline">
                     {summary.journey.last_messages.map((msg, idx) => (
                       <MessageBubble
                         key={idx}
@@ -1397,12 +1294,12 @@ export default function Dashboard() {
         )}
 
         {!hasData && (
-          <div id="upload" className="card" style={{ display: "grid", gap: "10px" }}>
-            <h3 style={{ margin: 0 }}>Upload your chat to see insights</h3>
-            <p style={{ color: "var(--muted)", margin: 0 }}>
+          <div id="upload" className="card upload-card">
+            <h3 className="card-header">Upload your chat to see insights</h3>
+            <p className="text-muted m-0">
               No uploads leave your device. Processing happens locally and privately.
             </p>
-            <div style={{ display: "grid", gap: 12 }}>
+            <div className="upload-form">
               <div
                 role="region"
                 aria-label="File drop zone"
@@ -1410,82 +1307,48 @@ export default function Dashboard() {
                 onDragOver={handleDragOver}
                 onDragEnter={handleDragEnter}
                 onDragLeave={handleDragLeave}
-                style={{
-                  border: isDragging ? "1px dashed rgba(255,255,255,0.5)" : "1px dashed rgba(255,255,255,0.2)",
-                  borderRadius: 12,
-                  padding: 16,
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 8,
-                  background: isDragging ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.02)",
-                  boxShadow: isDragging ? "inset 0 0 0 1px rgba(255,255,255,0.08)" : "none",
-                  transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
-                }}
+                className={`upload-dropzone ${isDragging ? "dragging" : ""}`}
               >
-                <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-                  <label
-                    className="btn"
-                    style={{
-                      cursor: "pointer",
-                      background: "rgba(100, 216, 255, 0.18)",
-                      color: "white",
-                      boxShadow: "0 8px 24px rgba(100, 216, 255, 0.25)",
-                      border: "1px solid rgba(100, 216, 255, 0.35)",
-                      fontWeight: 700,
-                    }}
-                  >
+                <div className="file-picker">
+                  <label className="btn upload-btn">
                     Upload .txt file or a zip file
                     <input
                       type="file"
                       accept=".txt,.zip"
                       multiple
-                      style={{ display: "none" }}
+                      className="file-input"
                       onChange={onFileChange}
                       aria-label="Upload WhatsApp chat export file"
                     />
                   </label>
-                  <span style={{ color: "var(--muted)", fontSize: 14 }}>
+                  <span className="file-info">
                     or drag & drop
                   </span>
                 </div>
-                {error && <span style={{ color: "#ff7edb" }}>{error}</span>}
+                {error && <span className="error-text">{error}</span>}
               </div>
               <details
                 open={showExportHelp}
                 onToggle={(e) => setShowExportHelp((e.target as HTMLDetailsElement).open)}
-                style={{ marginTop: 8 }}
+                className="instructions-toggle"
               >
-                <summary
-                  style={{
-                    cursor: "pointer",
-                    color: "var(--muted)",
-                    fontSize: 14,
-                    userSelect: "none",
-                  }}
-                >
+                <summary className="text-muted text-md">
                   How do I export my chats?
                 </summary>
-                <div
-                  style={{
-                    marginTop: 12,
-                    display: "grid",
-                    gap: 16,
-                    gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-                  }}
-                >
+                <div className="instructions-content">
                   <div>
-                    <strong style={{ display: "block", marginBottom: 6 }}>iPhone</strong>
-                    <ol style={{ lineHeight: 1.6, paddingLeft: 20, margin: 0, color: "var(--muted)" }}>
+                    <strong className="mb-sm d-block">iPhone</strong>
+                    <ol className="instructions-list">
                       <li>Open the chat, tap its name to enter Chat Info.</li>
-                      <li>Scroll to the bottom, tap <strong style={{ color: "#fff" }}>Export Chat</strong>.</li>
-                      <li>Choose <strong style={{ color: "#fff" }}>Without Media</strong> and save/share the TXT.</li>
+                      <li>Scroll to the bottom, tap <strong className="text-white">Export Chat</strong>.</li>
+                      <li>Choose <strong className="text-white">Without Media</strong> and save/share the TXT.</li>
                     </ol>
                   </div>
                   <div>
-                    <strong style={{ display: "block", marginBottom: 6 }}>Android</strong>
-                    <ol style={{ lineHeight: 1.6, paddingLeft: 20, margin: 0, color: "var(--muted)" }}>
+                    <strong className="mb-sm d-block">Android</strong>
+                    <ol className="instructions-list">
                       <li>Open the chat, tap ⋮ → More → Export chat.</li>
-                      <li>Pick <strong style={{ color: "#fff" }}>Without Media</strong> to keep the file small.</li>
+                      <li>Pick <strong className="text-white">Without Media</strong> to keep the file small.</li>
                       <li>Save the TXT, then upload it here.</li>
                     </ol>
                   </div>
