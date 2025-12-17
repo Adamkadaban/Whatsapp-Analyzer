@@ -1231,14 +1231,16 @@ export default function Dashboard() {
                   <p className="journey-subsection-desc">
                     Your conversation started with:
                   </p>
-                  <div className="journey-timeline">
-                    {summary.journey.first_messages.map((msg, idx) => (
-                      <MessageBubble
-                        key={idx}
-                        message={msg}
-                        senderColor={colorMap[msg.sender] || colors[idx % colors.length]}
-                      />
-                    ))}
+                  <div className="journey-moment-card">
+                    <div>
+                      {summary.journey.first_messages.map((msg, idx) => (
+                        <MessageBubble
+                          key={idx}
+                          message={msg}
+                          senderColor={colorMap[msg.sender] || colors[idx % colors.length]}
+                        />
+                      ))}
+                    </div>
                   </div>
                 </div>
 
@@ -1250,7 +1252,7 @@ export default function Dashboard() {
                     </h3>
                     <div className="grid-gap-xl">
                       {summary.journey.interesting_moments.map((moment, idx) => (
-                        <div key={idx} className="journey-moment-card" style={{ borderColor: colors[idx % colors.length] }}>
+                        <div key={idx} className="journey-moment-card">
                           <div className="journey-moment-header">
                             <div className="journey-moment-title">{moment.title}</div>
                             <div className="journey-moment-desc">{moment.description}</div>
@@ -1271,21 +1273,23 @@ export default function Dashboard() {
                 )}
 
                 {/* Last message */}
-                <div>
+                <div className="journey-subsection">
                   <h3 className="journey-subsection-title">
                     The latest chapter
                   </h3>
                   <p className="journey-subsection-desc">
                     Your most recent messages:
                   </p>
-                  <div className="journey-timeline">
-                    {summary.journey.last_messages.map((msg, idx) => (
-                      <MessageBubble
-                        key={idx}
-                        message={msg}
-                        senderColor={colorMap[msg.sender] || colors[idx % colors.length]}
-                      />
-                    ))}
+                  <div className="journey-moment-card">
+                    <div>
+                      {summary.journey.last_messages.map((msg, idx) => (
+                        <MessageBubble
+                          key={idx}
+                          message={msg}
+                          senderColor={colorMap[msg.sender] || colors[idx % colors.length]}
+                        />
+                      ))}
+                    </div>
                   </div>
                 </div>
               </div>
