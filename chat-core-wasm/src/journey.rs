@@ -68,7 +68,8 @@ fn find_interesting_moments(
             penalty += 1.5;
         }
 
-        let interest = sentiment_score_abs + length_score + diversity_score + expression_score - penalty;
+        let interest =
+            sentiment_score_abs + length_score + diversity_score + expression_score - penalty;
 
         // Require a minimum meaningful threshold and some words.
         if features.word_count < 6 || interest < 1.0 {
@@ -237,10 +238,7 @@ fn text_features(text: &str) -> TextFeatures {
     let mut exclamation = 0usize;
     let mut question = 0usize;
 
-    let words: Vec<&str> = text
-        .split_whitespace()
-        .filter(|w| !w.is_empty())
-        .collect();
+    let words: Vec<&str> = text.split_whitespace().filter(|w| !w.is_empty()).collect();
     let unique_words: std::collections::HashSet<&str> = words.iter().copied().collect();
 
     for ch in text.chars() {
@@ -269,8 +267,16 @@ fn text_features(text: &str) -> TextFeatures {
     }
 
     let total = alpha + digit + symbol;
-    let symbol_ratio = if total == 0 { 0.0 } else { symbol as f32 / total as f32 };
-    let digit_ratio = if total == 0 { 0.0 } else { digit as f32 / total as f32 };
+    let symbol_ratio = if total == 0 {
+        0.0
+    } else {
+        symbol as f32 / total as f32
+    };
+    let digit_ratio = if total == 0 {
+        0.0
+    } else {
+        digit as f32 / total as f32
+    };
     let caps_ratio = if (alpha + digit + symbol) == 0 {
         0.0
     } else {
