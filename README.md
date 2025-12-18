@@ -35,9 +35,28 @@ cd ../
 pnpm dev
 ```
 
-## Tests and Coverage
-- Frontend: `pnpm vitest run --coverage`
-- Rust (CLI core): `cargo test`
+## Development
+
+### Linting
+```bash
+# Frontend (ESLint)
+pnpm lint
+
+# Rust (fmt + clippy)
+cd chat-core-wasm
+cargo fmt --check
+cargo clippy -- -D warnings
+```
+
+### Testing
+```bash
+# Frontend (75 tests)
+pnpm test
+
+# Rust WASM (28 tests)
+cd chat-core-wasm
+cargo test
+```
 
 ## Build
 ```bash
