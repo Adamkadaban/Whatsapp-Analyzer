@@ -130,24 +130,57 @@ export default function Dashboard() {
         import("jspdf"),
       ]);
 
+      // Temporarily add the class so the export banner is laid out and we can
+      // measure the true content size (including the banner). All measurements
+      // here are synchronous, so the browser performs layout but never paints.
+      // We strip the class again BEFORE the async capture below, which prevents
+      // the banner/logo from visibly flashing onto the live page during export.
       node.classList.add("exporting");
 
       const width = Math.ceil(node.scrollWidth);
       const height = Math.ceil(node.scrollHeight + PDF_HEIGHT_BUFFER_PX);
+
+      // Capture the banner geometry (relative to the node) for the PDF hyperlink
+      // overlay while it is still laid out.
+      let bannerGeom: { left: number; top: number; width: number; height: number } | null = null;
+      const bannerEl = node.querySelector(".export-banner") as HTMLElement | null;
+      if (bannerEl) {
+        const nodeRect = node.getBoundingClientRect();
+        const bannerRect = bannerEl.getBoundingClientRect();
+        if (bannerRect.width > 0 && bannerRect.height > 0) {
+          bannerGeom = {
+            left: bannerRect.left - nodeRect.left,
+            top: bannerRect.top - nodeRect.top,
+            width: bannerRect.width,
+            height: bannerRect.height,
+          };
+        }
+      }
+
+      node.classList.remove("exporting");
+
       const scale = Math.min(PDF_MAX_SCALE, PDF_MAX_DIMENSION_PX / Math.max(width, height));
       const canvasWidth = Math.floor(width * scale);
       const canvasHeight = Math.floor(height * scale);
 
+      // Render the clone at the final (super-sampled) resolution and scale its
+      // content up with a CSS transform. This makes the browser rasterize text
+      // crisply at the target size. The previous approach kept the SVG at 1x
+      // (width/height) and let jsPDF/canvas upscale the bitmap, which blurred
+      // all text. Here drawImage is effectively 1:1, so text stays sharp.
       const imgData = await toPng(node, {
         pixelRatio: 1,
         cacheBust: true,
         backgroundColor: getComputedStyle(document.body).backgroundColor || "#05060a",
-        width,
-        height,
-        canvasWidth,
-        canvasHeight,
+        width: canvasWidth,
+        height: canvasHeight,
         skipFonts: true,
-        style: { width: `${width}px`, height: `${height}px` },
+        style: {
+          width: `${width}px`,
+          height: `${height}px`,
+          transform: `scale(${scale})`,
+          transformOrigin: "top left",
+        },
         filter: (n) => {
           const el = n as HTMLElement;
           if (el.classList?.contains("export-hide")) return false;
@@ -182,18 +215,11 @@ export default function Dashboard() {
       let linkY = 12;
       let linkWidth = Math.min(180, canvasWidth * 0.25);
       let linkHeight = 48;
-      try {
-        const banner = node.querySelector(".export-banner") as HTMLElement | null;
-        const nodeRect = node.getBoundingClientRect();
-        const bannerRect = banner?.getBoundingClientRect();
-        if (bannerRect) {
-          linkX = Math.max(4, (bannerRect.left - nodeRect.left) * scale);
-          linkY = Math.max(4, (bannerRect.top - nodeRect.top) * scale);
-          linkWidth = Math.max(40, bannerRect.width * scale);
-          linkHeight = Math.max(20, bannerRect.height * scale);
-        }
-      } catch (e) {
-        console.warn("Failed to measure export banner for PDF link", e);
+      if (bannerGeom) {
+        linkX = Math.max(4, bannerGeom.left * scale);
+        linkY = Math.max(4, bannerGeom.top * scale);
+        linkWidth = Math.max(40, bannerGeom.width * scale);
+        linkHeight = Math.max(20, bannerGeom.height * scale);
       }
 
       pdf.link(linkX, linkY, linkWidth, linkHeight, { url: linkUrl });
