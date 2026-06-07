@@ -9,7 +9,7 @@ export interface KpiDatum {
   detail?: string;
 }
 
-interface DashboardStatsResult {
+export interface DashboardStatsResult {
   dailyData: DailyDatum[];
   busiestDay: DailyDatum | null;
   quietestDay: DailyDatum | null;
@@ -51,11 +51,11 @@ function formatDayLabel(day: string): string {
  */
 export function useDashboardStats(
   summary: Summary | null,
-  filterStopwords: boolean
+  filterStopwords: boolean,
 ): DashboardStatsResult {
   const dailyData: DailyDatum[] = useMemo(
-    () => summary ? summary.daily.map((d) => ({ day: d.label, messages: d.value })) : [],
-    [summary]
+    () => (summary ? summary.daily.map((d) => ({ day: d.label, messages: d.value })) : []),
+    [summary],
   );
 
   const busiestDay = useMemo(() => {
@@ -71,9 +71,10 @@ export function useDashboardStats(
   const longestStreakData = useMemo(() => calcLongestStreak(dailyData), [dailyData]);
 
   const topStarter = summary?.conversation_starters[0];
-  const topStarterShare = summary && topStarter && summary.conversation_count
-    ? Math.round((topStarter.value / summary.conversation_count) * 100)
-    : 0;
+  const topStarterShare =
+    summary && topStarter && summary.conversation_count
+      ? Math.round((topStarter.value / summary.conversation_count) * 100)
+      : 0;
 
   const kpis: KpiDatum[] = useMemo(() => {
     if (!summary) return [];
@@ -91,17 +92,23 @@ export function useDashboardStats(
       {
         label: "Busiest day",
         value: busiestDay ? formatDayLabel(busiestDay.day) : "-",
-        detail: busiestDay ? `${busiestDay.messages.toLocaleString()} ${busiestDay.messages === 1 ? "message" : "messages"}` : "",
+        detail: busiestDay
+          ? `${busiestDay.messages.toLocaleString()} ${busiestDay.messages === 1 ? "message" : "messages"}`
+          : "",
       },
       {
         label: "Quietest day",
         value: quietestDay ? formatDayLabel(quietestDay.day) : "-",
-        detail: quietestDay ? `${quietestDay.messages.toLocaleString()} ${quietestDay.messages === 1 ? "message" : "messages"}` : "",
+        detail: quietestDay
+          ? `${quietestDay.messages.toLocaleString()} ${quietestDay.messages === 1 ? "message" : "messages"}`
+          : "",
       },
       {
         label: "Longest streak",
         value: `${longestStreakData.days} ${longestStreakData.days === 1 ? "day" : "days"}`,
-        detail: longestStreakData.start ? `${formatDayLabel(longestStreakData.start)} - ${formatDayLabel(longestStreakData.end)}` : "",
+        detail: longestStreakData.start
+          ? `${formatDayLabel(longestStreakData.start)} - ${formatDayLabel(longestStreakData.end)}`
+          : "",
       },
       {
         label: "Conversation starts",
@@ -119,21 +126,31 @@ export function useDashboardStats(
         detail: `${(filterStopwords ? summary.top_words : summary.top_words_no_stop)[0]?.value ?? 0} uses`,
       },
     ];
-  }, [summary, busiestDay, quietestDay, longestStreakData, topStarter, topStarterShare, filterStopwords]);
+  }, [
+    summary,
+    busiestDay,
+    quietestDay,
+    longestStreakData,
+    topStarter,
+    topStarterShare,
+    filterStopwords,
+  ]);
 
   const timelineData = useMemo(
-    () => summary ? summary.timeline.map((d) => ({ date: d.label, messages: d.value })) : [],
-    [summary]
+    () => (summary ? summary.timeline.map((d) => ({ date: d.label, messages: d.value })) : []),
+    [summary],
   );
 
   const senderData = useMemo(
-    () => summary ? summary.by_sender.slice(0, 6).map((s) => ({ name: s.label, value: s.value })) : [],
-    [summary]
+    () =>
+      summary ? summary.by_sender.slice(0, 6).map((s) => ({ name: s.label, value: s.value })) : [],
+    [summary],
   );
 
   const conversationStartersData = useMemo(
-    () => summary ? summary.conversation_starters.map((s) => ({ name: s.label, value: s.value })) : [],
-    [summary]
+    () =>
+      summary ? summary.conversation_starters.map((s) => ({ name: s.label, value: s.value })) : [],
+    [summary],
   );
 
   const hourlyStacked = useMemo(() => {
@@ -170,15 +187,20 @@ export function useDashboardStats(
   }, [summary]);
 
   const wordCloud = useMemo(
-    () => summary ? (filterStopwords ? summary.word_cloud : summary.word_cloud_no_stop) : [],
-    [summary, filterStopwords]
+    () => (summary ? (filterStopwords ? summary.word_cloud : summary.word_cloud_no_stop) : []),
+    [summary, filterStopwords],
   );
 
   const emojiCloud = useMemo(() => summary?.emoji_cloud ?? [], [summary]);
 
   const perPersonPhrases = useMemo(
-    () => summary ? (filterStopwords ? summary.per_person_phrases : summary.per_person_phrases_no_stop) : [],
-    [summary, filterStopwords]
+    () =>
+      summary
+        ? filterStopwords
+          ? summary.per_person_phrases
+          : summary.per_person_phrases_no_stop
+        : [],
+    [summary, filterStopwords],
   );
 
   const sentimentByDay = useMemo(() => summary?.sentiment_by_day ?? [], [summary]);
@@ -198,15 +220,16 @@ export function useDashboardStats(
   }, [sentimentByDay]);
 
   const sentimentStacked = useMemo(() => {
-    if (!sentimentOverall.length) return [] as { name: string; mean: number; pos: number; neu: number; neg: number }[];
+    if (!sentimentOverall.length)
+      return [] as { name: string; mean: number; pos: number; neu: number; neg: number }[];
     return sentimentOverall.map((row) => {
       const total = Math.max(row.pos + row.neu + row.neg, 1);
       return {
         name: row.name,
         mean: Number(row.mean.toFixed(3)),
-        pos: Number(((row.pos as number) / total * 100).toFixed(1)),
-        neu: Number(((row.neu as number) / total * 100).toFixed(1)),
-        neg: Number(((row.neg as number) / total * 100).toFixed(1)),
+        pos: Number((((row.pos as number) / total) * 100).toFixed(1)),
+        neu: Number((((row.neu as number) / total) * 100).toFixed(1)),
+        neg: Number((((row.neg as number) / total) * 100).toFixed(1)),
       };
     });
   }, [sentimentOverall]);
@@ -223,7 +246,10 @@ export function useDashboardStats(
     });
     return Array.from(grouped.entries())
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([day, agg]) => ({ day, mean: agg.count === 0 ? 0 : Number((agg.sum / agg.count).toFixed(3)) }));
+      .map(([day, agg]) => ({
+        day,
+        mean: agg.count === 0 ? 0 : Number((agg.sum / agg.count).toFixed(3)),
+      }));
   }, [sentimentByDay]);
 
   const hasSentiment = sentimentByDay.length > 0;
