@@ -1,3 +1,39 @@
+/*
+ * Self-hosted Space Grotesk (SIL OFL 1.1 - see /fonts/OFL.txt).
+ * Space Grotesk is a variable font: Google serves one identical Latin woff2
+ * for every weight, so all four faces reference the same local file. The
+ * browser fetches it once and renders the correct weight per declaration.
+ * Nothing is requested from Google at runtime.
+ */
+@font-face {
+  font-family: "Space Grotesk";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(/fonts/space-grotesk-latin.woff2) format("woff2");
+}
+@font-face {
+  font-family: "Space Grotesk";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url(/fonts/space-grotesk-latin.woff2) format("woff2");
+}
+@font-face {
+  font-family: "Space Grotesk";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url(/fonts/space-grotesk-latin.woff2) format("woff2");
+}
+@font-face {
+  font-family: "Space Grotesk";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url(/fonts/space-grotesk-latin.woff2) format("woff2");
+}
+
 :root {
   --bg: #05060a;
   --panel: rgba(255, 255, 255, 0.05);
