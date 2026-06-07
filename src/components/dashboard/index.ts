@@ -1,4 +1,5 @@
 export { default as ColorModal } from "./ColorModal";
+export { default as EmptyResultState } from "./EmptyResultState";
 export { default as JourneySection } from "./JourneySection";
 export { default as LoadingOverlay } from "./LoadingOverlay";
 export { default as MessageBubble } from "./MessageBubble";

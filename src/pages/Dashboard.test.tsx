@@ -1,7 +1,7 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { vi, describe, it, expect, beforeEach, afterEach, Mock } from "vitest";
 import Dashboard from "./Dashboard";
-import { createMockSummary } from "../lib/__fixtures__/mockSummary";
+import { createMockSummary, createEmptySummary } from "../lib/__fixtures__/mockSummary";
 
 // Mock the WASM module
 vi.mock("../lib/wasm", () => ({
@@ -439,6 +439,92 @@ describe("Dashboard", () => {
       await waitFor(() => {
         expect(screen.getByText(/Failed to parse/i)).toBeInTheDocument();
       });
+    });
+  });
+
+  describe("Empty Result State", () => {
+    // Drives the dashboard through upload -> analyze with a summary that has
+    // zero parseable messages (total_messages === 0).
+    const analyzeEmpty = async () => {
+      const { analyzeText } = await import("../lib/wasm");
+      (analyzeText as Mock).mockResolvedValue(createEmptySummary());
+
+      render(<Dashboard />);
+
+      const fileInput = screen.getByLabelText(/Upload WhatsApp chat export file/i);
+      const file = new File(["not a whatsapp chat"], "chat.txt", { type: "text/plain" });
+      fireEvent.change(fileInput, { target: { files: [file] } });
+
+      await waitFor(() => {
+        expect(screen.getByText("Ready to analyze")).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: "Analyze" }));
+
+      await waitFor(() => {
+        expect(screen.getByText("We couldn\u2019t find any messages")).toBeInTheDocument();
+      }, { timeout: 2000 });
+    };
+
+    it("shows the friendly empty state when no messages are found", async () => {
+      await analyzeEmpty();
+
+      const status = screen.getByRole("status");
+      expect(status).toHaveTextContent("We couldn\u2019t find any messages");
+      expect(status).toHaveTextContent(/exported from WhatsApp/i);
+      // A semantic heading (not color-only signaling).
+      expect(
+        screen.getByRole("heading", { name: /We couldn\u2019t find any messages/i })
+      ).toBeInTheDocument();
+    });
+
+    it("does NOT render the dashboard charts in the empty state", async () => {
+      await analyzeEmpty();
+
+      // None of the dashboard's analytical sections should appear.
+      expect(screen.queryByText("Chat timeline")).not.toBeInTheDocument();
+      expect(screen.queryByText("Hourly rhythm")).not.toBeInTheDocument();
+      expect(screen.queryByText("Most common words")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("area-chart")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("word-cloud")).not.toBeInTheDocument();
+      // Export controls are insight-only and must be hidden too.
+      expect(screen.queryByText("Export PDF")).not.toBeInTheDocument();
+      expect(screen.queryByText("Configure colors")).not.toBeInTheDocument();
+    });
+
+    it("offers a way back to upload from the empty state", async () => {
+      await analyzeEmpty();
+
+      fireEvent.click(screen.getByRole("button", { name: "Upload another chat" }));
+
+      await waitFor(() => {
+        expect(screen.getByText("Upload your chat to see insights")).toBeInTheDocument();
+      });
+      expect(screen.queryByText("We couldn\u2019t find any messages")).not.toBeInTheDocument();
+    });
+
+    it("renders the normal dashboard (not the empty state) for a non-empty summary", async () => {
+      const { analyzeText } = await import("../lib/wasm");
+      (analyzeText as Mock).mockResolvedValue(createMockSummary());
+
+      render(<Dashboard />);
+
+      const fileInput = screen.getByLabelText(/Upload WhatsApp chat export file/i);
+      const file = new File(["[1/1/24, 10:00] Alice: Hello"], "chat.txt", { type: "text/plain" });
+      fireEvent.change(fileInput, { target: { files: [file] } });
+
+      await waitFor(() => {
+        expect(screen.getByText("Ready to analyze")).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: "Analyze" }));
+
+      await waitFor(() => {
+        expect(screen.getByText("Chat timeline")).toBeInTheDocument();
+      }, { timeout: 2000 });
+
+      // The empty state must never appear on the happy path.
+      expect(screen.queryByText("We couldn\u2019t find any messages")).not.toBeInTheDocument();
     });
   });
 });

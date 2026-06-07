@@ -800,6 +800,39 @@ section {
   color: #ff7edb;
 }
 
+/* Empty-result state (file read OK, but no parseable messages) */
+.empty-result {
+  display: grid;
+  gap: 12px;
+  max-width: 640px;
+}
+
+.empty-result-lead {
+  line-height: 1.6;
+}
+
+.empty-result-list {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 8px;
+  line-height: 1.6;
+}
+
+.empty-result-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9em;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.empty-result-actions {
+  margin-top: 4px;
+}
+
+
 /* Instructions accordion */
 .instructions-toggle {
   margin-top: 8px;
