@@ -53,7 +53,6 @@ export default function Dashboard() {
   const [showStopTooltip, setShowStopTooltip] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
-  const [analyzing, setAnalyzing] = useState(false);
   const [processingElapsed, setProcessingElapsed] = useState(0);
   const dashboardRef = useRef<HTMLElement | null>(null);
 
@@ -67,7 +66,7 @@ export default function Dashboard() {
   const senderCount = summary?.by_sender.length ?? 0;
   const showLegend = senderCount <= MAX_LEGEND_SENDERS;
 
-  const isReady = pendingSummary !== null && !processing && !analyzing;
+  const isReady = pendingSummary !== null && !processing;
 
   // Track elapsed time during processing
   useEffect(() => {
@@ -87,15 +86,8 @@ export default function Dashboard() {
 
   function handleAnalyze() {
     if (pendingSummary) {
-      setAnalyzing(true);
-      setTimeout(() => {
-        try {
-          setSummary(pendingSummary);
-          resetFiles();
-        } finally {
-          setAnalyzing(false);
-        }
-      }, 800);
+      setSummary(pendingSummary);
+      resetFiles();
     }
   }
 
@@ -234,7 +226,6 @@ export default function Dashboard() {
     <main ref={dashboardRef} className="relative">
       <LoadingOverlay
         processing={processing}
-        analyzing={analyzing}
         isReady={isReady}
         fileName={fileName}
         fileCount={fileCount}

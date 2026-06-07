@@ -5,7 +5,6 @@ import {
 
 interface LoadingOverlayProps {
   processing: boolean;
-  analyzing: boolean;
   isReady: boolean;
   fileName: string | null;
   fileCount: number;
@@ -14,18 +13,17 @@ interface LoadingOverlayProps {
 }
 
 /**
- * Loading overlay shown during file processing, analysis, and when ready to analyze.
+ * Loading overlay shown during file processing and when ready to analyze.
  */
 export default function LoadingOverlay({
   processing,
-  analyzing,
   isReady,
   fileName,
   fileCount,
   processingElapsed,
   onAnalyze,
 }: LoadingOverlayProps) {
-  if (!processing && !isReady && !analyzing) return null;
+  if (!processing && !isReady) return null;
 
   return (
     <div className="loading-overlay" role="status" aria-live="polite">
@@ -43,13 +41,6 @@ export default function LoadingOverlay({
                     : "Loading file…"}
             </div>
             <div className="text-muted">{fileName}</div>
-          </>
-        )}
-        {analyzing && (
-          <>
-            <div className="spinner" aria-hidden="true" />
-            <div className="font-bold text-xl mb-sm">Analyzing your chat…</div>
-            <div className="text-muted">This will only take a moment.</div>
           </>
         )}
         {isReady && (
