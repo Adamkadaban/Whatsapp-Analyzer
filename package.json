@@ -8,13 +8,19 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
+    "coverage": "vitest run --coverage",
     "lint": "eslint src",
     "lint:fix": "eslint src --fix",
+    "typecheck": "tsc --noEmit",
+    "knip": "knip",
+    "format": "prettier --write \"src/**/*.{ts,tsx}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx}\"",
     "prepare": "husky"
   },
   "lint-staged": {
     "src/**/*.{ts,tsx}": [
-      "eslint --fix"
+      "eslint --fix",
+      "prettier --write"
     ],
     "*.json": [
       "prettier --write"
@@ -49,6 +55,7 @@
     "globals": "^16.5.0",
     "husky": "^9.1.7",
     "jsdom": "^22.1.0",
+    "knip": "^6.16.1",
     "lint-staged": "^16.2.7",
     "prettier": "^3.7.4",
     "typescript": "^5.2.2",
