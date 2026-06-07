@@ -11,7 +11,19 @@ vi.mock("d3-cloud", () => {
     font: () => MockCloud;
     fontSize: () => MockCloud;
     rotate: () => MockCloud;
-    on: (evt: string, cb: (output: { text: string; x: number; y: number; size: number; rotate: number; index: number }[]) => void) => MockCloud;
+    on: (
+      evt: string,
+      cb: (
+        output: {
+          text: string;
+          x: number;
+          y: number;
+          size: number;
+          rotate: number;
+          index: number;
+        }[],
+      ) => void,
+    ) => MockCloud;
     start: () => MockCloud;
   }
   return {
@@ -71,5 +83,20 @@ describe("EmojiCloud", () => {
 
     expect(screen.getByText("😀")).toBeInTheDocument();
     expect(screen.getByText("🔥")).toBeInTheDocument();
+  });
+
+  it("exposes the cloud as an image with a descriptive accessible name", () => {
+    const words: CloudWord[] = [
+      { label: "😀", value: 5 },
+      { label: "🔥", value: 4 },
+    ];
+
+    render(<EmojiCloud words={words} height={200} />);
+
+    const img = screen.getByRole("img");
+    expect(img.tagName.toLowerCase()).toBe("svg");
+    const label = img.getAttribute("aria-label") ?? "";
+    expect(label).toMatch(/emoji cloud/i);
+    expect(label).toContain("😀");
   });
 });

@@ -71,6 +71,9 @@ jobs:
       - name: Lint
         run: pnpm lint
 
+      - name: Dead code (knip)
+        run: pnpm knip
+
       - name: Typecheck
         run: pnpm tsc --noEmit
 

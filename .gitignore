@@ -22,6 +22,8 @@ debug/
 /data
 *.txt
 !vitest.setup.ts
+# bundled font license must be tracked
+!public/fonts/OFL.txt
 # local reference materials and sample exports
 /references/
 /samples/

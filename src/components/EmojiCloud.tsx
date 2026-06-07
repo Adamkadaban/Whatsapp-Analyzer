@@ -10,6 +10,11 @@ export type CloudWord = {
 const COLORS = CHART_COLORS;
 const FONT_FAMILY = EMOJI_CLOUD_FONT;
 
+// Debounce window for resize-driven relayout. Coalesces the burst of
+// ResizeObserver ticks emitted while a window is being dragged/resized so the
+// d3-cloud layout runs at most once per settled size instead of every frame.
+const RESIZE_DEBOUNCE_MS = 120;
+
 export default function EmojiCloud({
   words,
   colors = COLORS,
@@ -23,12 +28,25 @@ export default function EmojiCloud({
   const [layoutWords, setLayoutWords] = useState<cloud.Word[]>([]);
   const [width, setWidth] = useState(0);
 
-  const filtered = useMemo(
-    () => words.filter((w) => w.value > 0).slice(0, 100),
-    [words]
-  );
+  const filtered = useMemo(() => words.filter((w) => w.value > 0).slice(0, 100), [words]);
 
-  // Measure container width once on mount and on resize
+  // Emoji <text> glyphs are opaque to screen readers, so convey the meaning of
+  // the cloud through an accessible name on the image as a whole.
+  const ariaLabel = useMemo(() => {
+    if (filtered.length === 0) return "Emoji cloud (no emojis to display)";
+    const top = filtered
+      .slice()
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 5)
+      .map((w) => w.label)
+      .join(" ");
+    return `Emoji cloud of the ${filtered.length} most used emojis; top emojis: ${top}.`;
+  }, [filtered]);
+
+  // Measure container width on mount and on resize. The initial measurement is
+  // synchronous so the first layout is not delayed, but subsequent resize ticks
+  // are debounced so dragging/resizing the window doesn't thrash the expensive
+  // d3-cloud relayout on every observer callback.
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -36,9 +54,19 @@ export default function EmojiCloud({
     const measure = () => setWidth(el.clientWidth || 0);
     measure();
 
-    const ro = new ResizeObserver(measure);
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const ro = new ResizeObserver(() => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = null;
+        measure();
+      }, RESIZE_DEBOUNCE_MS);
+    });
     ro.observe(el);
-    return () => ro.disconnect();
+    return () => {
+      if (timer) clearTimeout(timer);
+      ro.disconnect();
+    };
   }, []);
 
   // Run d3-cloud layout when data or size changes
@@ -81,7 +109,13 @@ export default function EmojiCloud({
 
   return (
     <div ref={containerRef} style={{ width: "100%", height }}>
-      <svg width="100%" height="100%" viewBox={`0 0 ${width || 1} ${height}`}>
+      <svg
+        width="100%"
+        height="100%"
+        viewBox={`0 0 ${width || 1} ${height}`}
+        role="img"
+        aria-label={ariaLabel}
+      >
         <g transform={`translate(${width / 2}, ${height / 2})`}>
           {layoutWords.map((w, idx) => (
             <text

@@ -1,7 +1,7 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { vi, describe, it, expect, beforeEach, afterEach, Mock } from "vitest";
 import Dashboard from "./Dashboard";
-import { createMockSummary } from "../lib/__fixtures__/mockSummary";
+import { createMockSummary, createEmptySummary } from "../lib/__fixtures__/mockSummary";
 
 // Mock the WASM module
 vi.mock("../lib/wasm", () => ({
@@ -14,11 +14,21 @@ vi.mock("recharts", () => ({
   ResponsiveContainer: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="responsive-container">{children}</div>
   ),
-  AreaChart: ({ children }: { children: React.ReactNode }) => <div data-testid="area-chart">{children}</div>,
-  BarChart: ({ children }: { children: React.ReactNode }) => <div data-testid="bar-chart">{children}</div>,
-  LineChart: ({ children }: { children: React.ReactNode }) => <div data-testid="line-chart">{children}</div>,
-  PieChart: ({ children }: { children: React.ReactNode }) => <div data-testid="pie-chart">{children}</div>,
-  RadarChart: ({ children }: { children: React.ReactNode }) => <div data-testid="radar-chart">{children}</div>,
+  AreaChart: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="area-chart">{children}</div>
+  ),
+  BarChart: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="bar-chart">{children}</div>
+  ),
+  LineChart: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="line-chart">{children}</div>
+  ),
+  PieChart: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="pie-chart">{children}</div>
+  ),
+  RadarChart: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="radar-chart">{children}</div>
+  ),
   Area: () => <div data-testid="area" />,
   Bar: () => <div data-testid="bar" />,
   Cell: () => <div data-testid="cell" />,
@@ -115,7 +125,7 @@ describe("Dashboard", () => {
     it("shows loading overlay during file processing", async () => {
       const { analyzeText } = await import("../lib/wasm");
       (analyzeText as Mock).mockImplementation(
-        () => new Promise((resolve) => setTimeout(() => resolve(createMockSummary()), 100))
+        () => new Promise((resolve) => setTimeout(() => resolve(createMockSummary()), 100)),
       );
 
       render(<Dashboard />);
@@ -154,9 +164,12 @@ describe("Dashboard", () => {
       fireEvent.click(analyzeBtn);
 
       // Wait for data to render
-      await waitFor(() => {
-        expect(screen.getByText("Chat timeline")).toBeInTheDocument();
-      }, { timeout: 2000 });
+      await waitFor(
+        () => {
+          expect(screen.getByText("Chat timeline")).toBeInTheDocument();
+        },
+        { timeout: 2000 },
+      );
 
       return mockSummary;
     };
@@ -264,9 +277,12 @@ describe("Dashboard", () => {
 
       fireEvent.click(screen.getByRole("button", { name: "Analyze" }));
 
-      await waitFor(() => {
-        expect(screen.getByText("Journey Through Your Messages")).toBeInTheDocument();
-      }, { timeout: 2000 });
+      await waitFor(
+        () => {
+          expect(screen.getByText("Journey Through Your Messages")).toBeInTheDocument();
+        },
+        { timeout: 2000 },
+      );
 
       return mockSummary;
     };
@@ -327,9 +343,12 @@ describe("Dashboard", () => {
 
       fireEvent.click(screen.getByRole("button", { name: "Analyze" }));
 
-      await waitFor(() => {
-        expect(screen.getByText("Mood lanes by person")).toBeInTheDocument();
-      }, { timeout: 2000 });
+      await waitFor(
+        () => {
+          expect(screen.getByText("Mood lanes by person")).toBeInTheDocument();
+        },
+        { timeout: 2000 },
+      );
 
       expect(screen.getByText("Polarity mix per person")).toBeInTheDocument();
       expect(screen.getByText("Overall mood drift")).toBeInTheDocument();
@@ -354,9 +373,12 @@ describe("Dashboard", () => {
 
       fireEvent.click(screen.getByRole("button", { name: "Analyze" }));
 
-      await waitFor(() => {
-        expect(screen.getByText("Chat timeline")).toBeInTheDocument();
-      }, { timeout: 2000 });
+      await waitFor(
+        () => {
+          expect(screen.getByText("Chat timeline")).toBeInTheDocument();
+        },
+        { timeout: 2000 },
+      );
     };
 
     it("toggles stopword filter", async () => {
@@ -367,6 +389,23 @@ describe("Dashboard", () => {
 
       fireEvent.click(toggle);
       expect(toggle).not.toBeChecked();
+    });
+
+    it("makes the stop-word help trigger keyboard-focusable and wires aria-describedby", async () => {
+      await setupWithData();
+
+      const trigger = screen.getByText("Filter stop-words");
+      expect(trigger).toHaveAttribute("tabindex", "0");
+      expect(trigger).toHaveAttribute("role", "button");
+      expect(trigger).not.toHaveAttribute("aria-describedby");
+
+      fireEvent.focus(trigger);
+      const tip = screen.getByRole("tooltip");
+      expect(tip).toHaveAttribute("id", "stopword-help");
+      expect(trigger).toHaveAttribute("aria-describedby", "stopword-help");
+
+      fireEvent.blur(trigger);
+      expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
     });
 
     it("opens color configuration modal", async () => {
@@ -414,7 +453,10 @@ describe("Dashboard", () => {
       const h2 = screen.getByRole("heading", { level: 2, name: "Dashboard" });
       expect(h2).toBeInTheDocument();
 
-      const h3 = screen.getByRole("heading", { level: 3, name: "Upload your chat to see insights" });
+      const h3 = screen.getByRole("heading", {
+        level: 3,
+        name: "Upload your chat to see insights",
+      });
       expect(h3).toBeInTheDocument();
     });
 
@@ -439,6 +481,98 @@ describe("Dashboard", () => {
       await waitFor(() => {
         expect(screen.getByText(/Failed to parse/i)).toBeInTheDocument();
       });
+    });
+  });
+
+  describe("Empty Result State", () => {
+    // Drives the dashboard through upload -> analyze with a summary that has
+    // zero parseable messages (total_messages === 0).
+    const analyzeEmpty = async () => {
+      const { analyzeText } = await import("../lib/wasm");
+      (analyzeText as Mock).mockResolvedValue(createEmptySummary());
+
+      render(<Dashboard />);
+
+      const fileInput = screen.getByLabelText(/Upload WhatsApp chat export file/i);
+      const file = new File(["not a whatsapp chat"], "chat.txt", { type: "text/plain" });
+      fireEvent.change(fileInput, { target: { files: [file] } });
+
+      await waitFor(() => {
+        expect(screen.getByText("Ready to analyze")).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: "Analyze" }));
+
+      await waitFor(
+        () => {
+          expect(screen.getByText("We couldn\u2019t find any messages")).toBeInTheDocument();
+        },
+        { timeout: 2000 },
+      );
+    };
+
+    it("shows the friendly empty state when no messages are found", async () => {
+      await analyzeEmpty();
+
+      const status = screen.getByRole("status");
+      expect(status).toHaveTextContent("We couldn\u2019t find any messages");
+      expect(status).toHaveTextContent(/exported from WhatsApp/i);
+      // A semantic heading (not color-only signaling).
+      expect(
+        screen.getByRole("heading", { name: /We couldn\u2019t find any messages/i }),
+      ).toBeInTheDocument();
+    });
+
+    it("does NOT render the dashboard charts in the empty state", async () => {
+      await analyzeEmpty();
+
+      // None of the dashboard's analytical sections should appear.
+      expect(screen.queryByText("Chat timeline")).not.toBeInTheDocument();
+      expect(screen.queryByText("Hourly rhythm")).not.toBeInTheDocument();
+      expect(screen.queryByText("Most common words")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("area-chart")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("word-cloud")).not.toBeInTheDocument();
+      // Export controls are insight-only and must be hidden too.
+      expect(screen.queryByText("Export PDF")).not.toBeInTheDocument();
+      expect(screen.queryByText("Configure colors")).not.toBeInTheDocument();
+    });
+
+    it("offers a way back to upload from the empty state", async () => {
+      await analyzeEmpty();
+
+      fireEvent.click(screen.getByRole("button", { name: "Upload another chat" }));
+
+      await waitFor(() => {
+        expect(screen.getByText("Upload your chat to see insights")).toBeInTheDocument();
+      });
+      expect(screen.queryByText("We couldn\u2019t find any messages")).not.toBeInTheDocument();
+    });
+
+    it("renders the normal dashboard (not the empty state) for a non-empty summary", async () => {
+      const { analyzeText } = await import("../lib/wasm");
+      (analyzeText as Mock).mockResolvedValue(createMockSummary());
+
+      render(<Dashboard />);
+
+      const fileInput = screen.getByLabelText(/Upload WhatsApp chat export file/i);
+      const file = new File(["[1/1/24, 10:00] Alice: Hello"], "chat.txt", { type: "text/plain" });
+      fireEvent.change(fileInput, { target: { files: [file] } });
+
+      await waitFor(() => {
+        expect(screen.getByText("Ready to analyze")).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: "Analyze" }));
+
+      await waitFor(
+        () => {
+          expect(screen.getByText("Chat timeline")).toBeInTheDocument();
+        },
+        { timeout: 2000 },
+      );
+
+      // The empty state must never appear on the happy path.
+      expect(screen.queryByText("We couldn\u2019t find any messages")).not.toBeInTheDocument();
     });
   });
 });

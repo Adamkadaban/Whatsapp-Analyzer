@@ -12,6 +12,7 @@ pub(crate) struct Message {
 fn re_bracket() -> &'static Regex {
     static RE: OnceCell<Regex> = OnceCell::new();
     RE.get_or_init(|| {
+        // SAFE: compile-time-constant pattern, validated by tests; never depends on user input.
         Regex::new(r"^[\u{feff}\u{200e}]?\[(?P<date>\d{1,2}[\/.]\d{1,2}[\/.]\d{2,4}),\s+(?P<time>[^\]]+)\]\s+(?P<name>[^:]+):\s+(?P<msg>.*)$")
             .expect("valid regex")
     })
@@ -20,6 +21,7 @@ fn re_bracket() -> &'static Regex {
 fn re_hyphen() -> &'static Regex {
     static RE: OnceCell<Regex> = OnceCell::new();
     RE.get_or_init(|| {
+        // SAFE: compile-time-constant pattern, validated by tests; never depends on user input.
         Regex::new(r"^(?P<date>\d{1,2}[\/.]\d{1,2}[\/.]\d{2,4}),\s+(?P<time>\d{1,2}:\d{2}(?::\d{2})?(?:\s*[AP]M)?)\s+-\s+(?P<name>[^:]+):\s+(?P<msg>.*)$")
             .expect("valid regex")
     })
@@ -249,4 +251,181 @@ pub(crate) fn re_bracket_pattern() -> &'static Regex {
 
 pub(crate) fn re_hyphen_pattern() -> &'static Regex {
     re_hyphen()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::{Datelike, Timelike};
+
+    #[test]
+    fn parse_timestamp_bracket_pm_style() {
+        let dt = parse_timestamp("8/19/19", "5:04:35 PM").expect("parses");
+        assert_eq!(dt.year(), 2019);
+        assert_eq!(dt.month(), 8);
+        assert_eq!(dt.date().day(), 19);
+        assert_eq!(dt.hour(), 17);
+        assert_eq!(dt.minute(), 4);
+        assert_eq!(dt.second(), 35);
+    }
+
+    #[test]
+    fn parse_timestamp_24h_hyphen_style() {
+        let dt = parse_timestamp("13.12.2023", "22:45").expect("parses dotted");
+        assert_eq!(dt.year(), 2023);
+        assert_eq!(dt.month(), 12);
+        assert_eq!(dt.date().day(), 13);
+        assert_eq!(dt.hour(), 22);
+        assert_eq!(dt.minute(), 45);
+    }
+
+    #[test]
+    fn parse_timestamp_day_first_when_day_gt_12() {
+        // 25 cannot be a month, so it must be day/month/year.
+        let dt = parse_timestamp("25/12/2023", "09:30").expect("parses");
+        assert_eq!(dt.month(), 12);
+        assert_eq!(dt.date().day(), 25);
+    }
+
+    #[test]
+    fn parse_timestamp_handles_narrow_nbsp_in_time() {
+        // WhatsApp inserts U+202F before AM/PM; it must be normalized.
+        let dt = parse_timestamp("1/2/2024", "9:15\u{202f}AM").expect("parses nbsp");
+        assert_eq!(dt.hour(), 9);
+        assert_eq!(dt.minute(), 15);
+    }
+
+    #[test]
+    fn parse_timestamp_two_digit_year_expands() {
+        let dt = parse_timestamp("3/4/05", "1:00 PM").expect("parses");
+        assert_eq!(dt.year(), 2005);
+    }
+
+    #[test]
+    fn parse_timestamp_rejects_garbage() {
+        assert!(parse_timestamp("not-a-date", "nonsense").is_none());
+        assert!(parse_timestamp("", "").is_none());
+        assert!(parse_timestamp("99/99/99", "99:99:99").is_none());
+    }
+
+    #[test]
+    fn parse_messages_empty_input() {
+        assert!(parse_messages("").is_empty());
+        assert!(parse_messages("\n\n   \n").is_empty());
+    }
+
+    #[test]
+    fn parse_messages_garbage_only_is_empty() {
+        let raw = "this is not a chat\njust random lines\n123 456";
+        assert!(parse_messages(raw).is_empty());
+    }
+
+    #[test]
+    fn parse_messages_both_formats() {
+        let raw = "[8/19/19, 5:04:35 PM] Alice: hi there\n8/20/19, 7:00 AM - Bob: morning";
+        let msgs = parse_messages(raw);
+        assert_eq!(msgs.len(), 2);
+        assert_eq!(msgs[0].sender, "Alice");
+        assert_eq!(msgs[0].text, "hi there");
+        assert_eq!(msgs[1].sender, "Bob");
+    }
+
+    #[test]
+    fn parse_messages_multiline_continuation() {
+        let raw = "[8/19/19, 5:04:35 PM] Alice: first line\nsecond line\nthird line\n[8/19/19, 5:05:00 PM] Bob: reply";
+        let msgs = parse_messages(raw);
+        assert_eq!(msgs.len(), 2);
+        assert_eq!(msgs[0].text, "first line\nsecond line\nthird line");
+    }
+
+    #[test]
+    fn parse_messages_skips_lines_with_unparseable_dates() {
+        // Header matches the regex shape but the date is impossible -> skipped, no panic.
+        let raw =
+            "[99/99/99, 5:04:35 PM] Ghost: should be dropped\n[8/19/19, 5:04:35 PM] Alice: kept";
+        let msgs = parse_messages(raw);
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(msgs[0].sender, "Alice");
+    }
+
+    #[test]
+    fn parse_messages_filters_system_messages() {
+        let raw = "[8/19/19, 5:00:00 PM] System: Messages and calls are end-to-end encrypted.\n[8/19/19, 5:04:35 PM] Alice: real message";
+        let msgs = parse_messages(raw);
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(msgs[0].sender, "Alice");
+    }
+
+    #[test]
+    fn parse_messages_keeps_deleted_markers() {
+        let raw = "[8/19/19, 5:00:00 PM] Alice: You deleted this message\n[8/19/19, 5:04:35 PM] Bob: This message was deleted";
+        let msgs = parse_messages(raw);
+        assert_eq!(msgs.len(), 2);
+        assert_eq!(msgs[0].text, "You deleted this message");
+        assert_eq!(msgs[1].text, "This message was deleted");
+    }
+
+    #[test]
+    fn parse_messages_single_sender() {
+        let raw = "[1/1/20, 1:00:00 PM] Solo: a\n[1/1/20, 1:01:00 PM] Solo: b\n[1/1/20, 1:02:00 PM] Solo: c";
+        let msgs = parse_messages(raw);
+        assert_eq!(msgs.len(), 3);
+        assert!(msgs.iter().all(|m| m.sender == "Solo"));
+    }
+
+    #[test]
+    fn parse_messages_unicode_and_emoji_text() {
+        let raw = "[1/1/20, 1:00:00 PM] Zoé: héllo 😀 你好 🤷‍♀️";
+        let msgs = parse_messages(raw);
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(msgs[0].sender, "Zoé");
+        assert!(msgs[0].text.contains("😀"));
+        assert!(msgs[0].text.contains("你好"));
+    }
+
+    #[test]
+    fn clean_sender_strips_bidi_and_control_marks() {
+        let cleaned = clean_sender("\u{200e}\u{202a}Alice\u{202c}\u{200f}");
+        assert_eq!(cleaned, "Alice");
+    }
+
+    #[test]
+    fn clean_sender_trims_whitespace() {
+        assert_eq!(clean_sender("  Bob  "), "Bob");
+    }
+
+    #[test]
+    fn is_system_message_detects_banners() {
+        let sys = Message {
+            dt: parse_timestamp("1/1/20", "1:00 PM").unwrap(),
+            sender: "Alice".into(),
+            text: "Your security code with Bob changed. Tap to learn more.".into(),
+        };
+        assert!(is_system_message(&sys));
+
+        let normal = Message {
+            dt: parse_timestamp("1/1/20", "1:00 PM").unwrap(),
+            sender: "Alice".into(),
+            text: "hello".into(),
+        };
+        assert!(!is_system_message(&normal));
+    }
+
+    #[test]
+    fn is_system_message_detects_system_sender() {
+        let sys = Message {
+            dt: parse_timestamp("1/1/20", "1:00 PM").unwrap(),
+            sender: "system".into(),
+            text: "anything".into(),
+        };
+        assert!(is_system_message(&sys));
+    }
+
+    #[test]
+    fn weekday_index_and_label_round_trip() {
+        assert_eq!(weekday_label(weekday_index(chrono::Weekday::Sun)), "Sun");
+        assert_eq!(weekday_label(weekday_index(chrono::Weekday::Wed)), "Wed");
+        assert_eq!(weekday_label(weekday_index(chrono::Weekday::Sat)), "Sat");
+        assert_eq!(weekday_label(99), "?");
+    }
 }

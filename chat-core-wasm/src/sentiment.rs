@@ -218,3 +218,134 @@ const POSITIVE_EMOJIS: [&str; 12] = [
     "😀", "😃", "😄", "😁", "😆", "😍", "😊", "😂", "🤣", "👍", "🙏", "❤️",
 ];
 const NEGATIVE_EMOJIS: [&str; 10] = ["😢", "😭", "😡", "😠", "👎", "💔", "😞", "😔", "🙁", "☹️"];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::NaiveDateTime;
+
+    fn msg(sender: &str, text: &str, dt_str: &str) -> Message {
+        Message {
+            dt: NaiveDateTime::parse_from_str(dt_str, "%Y-%m-%d %H:%M:%S").unwrap(),
+            sender: sender.to_string(),
+            text: text.to_string(),
+        }
+    }
+
+    #[test]
+    fn classify_thresholds() {
+        assert!(matches!(classify_sentiment(0.5), SentimentClass::Positive));
+        assert!(matches!(classify_sentiment(-0.5), SentimentClass::Negative));
+        assert!(matches!(classify_sentiment(0.0), SentimentClass::Neutral));
+        assert!(matches!(classify_sentiment(0.05), SentimentClass::Neutral));
+        assert!(matches!(
+            classify_sentiment(0.051),
+            SentimentClass::Positive
+        ));
+        assert!(matches!(
+            classify_sentiment(-0.051),
+            SentimentClass::Negative
+        ));
+    }
+
+    #[test]
+    fn sentiment_score_neutral_for_empty_or_plain() {
+        let (compound, class) = sentiment_score("");
+        assert_eq!(compound, 0.0);
+        assert!(matches!(class, SentimentClass::Neutral));
+
+        let (c2, _) = sentiment_score("the cat sat on the mat");
+        assert_eq!(c2, 0.0);
+    }
+
+    #[test]
+    fn sentiment_score_positive_words() {
+        let (compound, class) = sentiment_score("I love this, it is great and awesome");
+        assert!(compound > 0.0);
+        assert!(matches!(class, SentimentClass::Positive));
+    }
+
+    #[test]
+    fn sentiment_score_negative_words() {
+        let (compound, class) = sentiment_score("this is terrible and awful, I hate it");
+        assert!(compound < 0.0);
+        assert!(matches!(class, SentimentClass::Negative));
+    }
+
+    #[test]
+    fn sentiment_score_clamped_to_unit_range() {
+        let (compound, _) = sentiment_score("love love love amazing awesome great perfect best");
+        assert!(compound <= 1.0);
+        assert!(compound >= -1.0);
+    }
+
+    #[test]
+    fn sentiment_score_emoji_positive() {
+        let (compound, class) = sentiment_score("😀😍👍");
+        assert!(compound > 0.0);
+        assert!(matches!(class, SentimentClass::Positive));
+    }
+
+    #[test]
+    fn sentiment_score_emoji_negative() {
+        let (compound, _) = sentiment_score("😢😭💔");
+        assert!(compound < 0.0);
+    }
+
+    #[test]
+    fn sentiment_score_mixed_can_cancel() {
+        // Two positive (+2 each) and two negative (-2 each) words -> score 0.
+        let (compound, class) = sentiment_score("love hate good bad");
+        assert_eq!(compound, 0.0);
+        assert!(matches!(class, SentimentClass::Neutral));
+    }
+
+    #[test]
+    fn sentiment_breakdown_empty() {
+        let (by_day, overall) = sentiment_breakdown(&[]);
+        assert!(by_day.is_empty());
+        assert!(overall.is_empty());
+    }
+
+    #[test]
+    fn sentiment_breakdown_aggregates_per_person_and_day() {
+        let messages = vec![
+            msg("Alice", "I love this great day", "2023-01-01 10:00:00"),
+            msg("Bob", "this is awful and terrible", "2023-01-01 11:00:00"),
+            msg("Alice", "another good one", "2023-01-02 10:00:00"),
+        ];
+        let (by_day, overall) = sentiment_breakdown(&messages);
+
+        // 3 (person, day) buckets.
+        assert_eq!(by_day.len(), 3);
+        // 2 people overall.
+        assert_eq!(overall.len(), 2);
+
+        let alice = overall.iter().find(|o| o.name == "Alice").unwrap();
+        let bob = overall.iter().find(|o| o.name == "Bob").unwrap();
+        assert!(alice.mean > 0.0);
+        assert!(bob.mean < 0.0);
+        assert_eq!(alice.pos, 2);
+        assert_eq!(bob.neg, 1);
+
+        // Overall sorted by descending mean -> Alice (positive) before Bob.
+        assert_eq!(overall[0].name, "Alice");
+    }
+
+    #[test]
+    fn sentiment_breakdown_day_sorted() {
+        let messages = vec![
+            msg("Alice", "good", "2023-02-01 10:00:00"),
+            msg("Alice", "bad", "2023-01-01 10:00:00"),
+        ];
+        let (by_day, _) = sentiment_breakdown(&messages);
+        assert_eq!(by_day.len(), 2);
+        assert!(by_day[0].day <= by_day[1].day);
+    }
+
+    #[test]
+    fn sentiment_agg_mean_handles_zero_count() {
+        let agg = SentimentAgg::default();
+        assert_eq!(agg.mean(), 0.0);
+    }
+}

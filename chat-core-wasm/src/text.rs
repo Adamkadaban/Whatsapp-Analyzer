@@ -184,7 +184,9 @@ fn emoji_re() -> &'static Regex {
                 )*                      # Zero or more ZWJ + emoji
             )
             "
-        ).expect("emoji regex")
+        )
+        // SAFE: compile-time-constant pattern, exercised by unit tests; independent of user input.
+        .expect("emoji regex")
     })
 }
 
@@ -192,6 +194,179 @@ fn url_re() -> &'static Regex {
     static RE: OnceCell<Regex> = OnceCell::new();
     RE.get_or_init(|| {
         // Matches common URL forms so we can strip them before tokenization.
+        // SAFE: compile-time-constant pattern; independent of user input.
         Regex::new(r"(?i)\bhttps?://\S+|\bwww\.[^\s]+").expect("url regex")
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn color_hex_lookup_known_and_unknown() {
+        assert_eq!(color_hex_for_word("blue"), Some("#64d8ff"));
+        assert_eq!(color_hex_for_word("lavender"), Some("#b39ddb"));
+        // Case-sensitive lookup: callers lowercase first.
+        assert_eq!(color_hex_for_word("Blue"), None);
+        assert_eq!(color_hex_for_word("notacolor"), None);
+        assert_eq!(color_hex_for_word(""), None);
+    }
+
+    #[test]
+    fn pick_dominant_color_empty_is_none() {
+        let freq: HashMap<String, u32> = HashMap::new();
+        assert_eq!(pick_dominant_color(&freq), None);
+    }
+
+    #[test]
+    fn pick_dominant_color_picks_highest_count() {
+        let mut freq = HashMap::new();
+        freq.insert("blue".to_string(), 1u32);
+        freq.insert("green".to_string(), 5u32);
+        assert_eq!(pick_dominant_color(&freq).as_deref(), Some("#06d6a0"));
+    }
+
+    #[test]
+    fn pick_dominant_color_tie_breaks_alphabetically() {
+        let mut freq = HashMap::new();
+        freq.insert("red".to_string(), 3u32);
+        freq.insert("blue".to_string(), 3u32);
+        // "blue" sorts before "red" alphabetically on the tie.
+        assert_eq!(pick_dominant_color(&freq).as_deref(), Some("#64d8ff"));
+    }
+
+    #[test]
+    fn pick_dominant_color_non_color_word_returns_none() {
+        let mut freq = HashMap::new();
+        freq.insert("banana".to_string(), 9u32);
+        assert_eq!(pick_dominant_color(&freq), None);
+    }
+
+    #[test]
+    fn media_omitted_detection_is_trim_and_case_insensitive() {
+        assert!(is_media_omitted_message("<Media omitted>"));
+        assert!(is_media_omitted_message("  <media omitted>  "));
+        assert!(is_media_omitted_message("<MEDIA OMITTED>"));
+        assert!(!is_media_omitted_message("media omitted"));
+        assert!(!is_media_omitted_message("hello <media omitted> world"));
+        assert!(!is_media_omitted_message(""));
+    }
+
+    #[test]
+    fn extract_emojis_empty_and_plain_text() {
+        assert!(extract_emojis("").is_empty());
+        assert!(extract_emojis("just plain ascii text 123").is_empty());
+    }
+
+    #[test]
+    fn extract_emojis_simple_and_repeated() {
+        assert_eq!(extract_emojis("😀"), vec!["😀"]);
+        assert_eq!(extract_emojis("a😀b😀"), vec!["😀", "😀"]);
+    }
+
+    #[test]
+    fn extract_emojis_keeps_zwj_sequence_intact() {
+        let out = extract_emojis("hi 🤷‍♀️ there");
+        assert_eq!(out, vec!["🤷‍♀️"]);
+    }
+
+    #[test]
+    fn extract_emojis_flag_regional_indicator_pair() {
+        let out = extract_emojis("🇺🇸");
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0], "🇺🇸");
+    }
+
+    #[test]
+    fn extract_emojis_handles_unicode_text_boundaries() {
+        // Mixed multibyte non-emoji text must not panic or mis-slice.
+        let out = extract_emojis("héllo naïve Ωmega 你好 😀");
+        assert_eq!(out, vec!["😀"]);
+    }
+
+    #[test]
+    fn tokenize_strips_urls_and_lowercases() {
+        let stop = stopwords_set();
+        let toks = tokenize("Hello WORLD https://example.com/page foo", false, stop);
+        assert!(toks.contains(&"hello".to_string()));
+        assert!(toks.contains(&"world".to_string()));
+        assert!(toks.contains(&"foo".to_string()));
+        assert!(toks.iter().all(|t| !t.contains("example")));
+    }
+
+    #[test]
+    fn tokenize_filter_stop_removes_stopwords() {
+        let stop = stopwords_set();
+        let with = tokenize("the cat and the dog", false, stop);
+        let without = tokenize("the cat and the dog", true, stop);
+        assert!(with.len() > without.len());
+        assert!(!without.contains(&"the".to_string()));
+        assert!(without.contains(&"cat".to_string()));
+    }
+
+    #[test]
+    fn tokenize_empty_input_yields_nothing() {
+        let stop = stopwords_set();
+        assert!(tokenize("", false, stop).is_empty());
+        assert!(tokenize("   \n\t  ", false, stop).is_empty());
+    }
+
+    #[test]
+    fn tokenize_preserves_heart_shortcut() {
+        let stop = stopwords_set();
+        let toks = tokenize("love you <3", false, stop);
+        assert!(toks.contains(&"<3".to_string()));
+        assert!(!toks.contains(&"3".to_string()));
+    }
+
+    #[test]
+    fn tokens_stop_stats_counts_correctly() {
+        let stop = stopwords_set();
+        let toks = vec![
+            "the".to_string(),
+            "cat".to_string(),
+            "and".to_string(),
+            "dog".to_string(),
+        ];
+        let (stop_count, non_stop) = tokens_stop_stats(&toks, stop);
+        assert_eq!(stop_count + non_stop, toks.len());
+        assert!(stop_count >= 2); // "the" and "and"
+    }
+
+    #[test]
+    fn tokens_stop_stats_empty() {
+        let stop = stopwords_set();
+        assert_eq!(tokens_stop_stats(&[], stop), (0, 0));
+    }
+
+    #[test]
+    fn tokens_alpha_numeric_stats_splits() {
+        let toks = vec![
+            "hello".to_string(),
+            "123".to_string(),
+            "world".to_string(),
+            "42".to_string(),
+        ];
+        let (alpha, numeric) = tokens_alpha_numeric_stats(&toks);
+        assert_eq!(numeric, 2);
+        assert_eq!(alpha, 2);
+    }
+
+    #[test]
+    fn tokens_alpha_numeric_stats_treats_symbols_as_alpha() {
+        let toks = vec!["<3".to_string(), "9".to_string()];
+        let (alpha, numeric) = tokens_alpha_numeric_stats(&toks);
+        assert_eq!(alpha, 1);
+        assert_eq!(numeric, 1);
+    }
+
+    #[test]
+    fn stopwords_set_includes_languages_and_extras() {
+        let stop = stopwords_set();
+        assert!(stop.contains("the"));
+        // WhatsApp extras are merged in.
+        assert!(stop.contains("omitted"));
+        assert!(stop.contains("deleted"));
+    }
 }

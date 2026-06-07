@@ -2,18 +2,29 @@
  * Mock Summary data for Dashboard tests.
  * This fixture provides realistic data structures that match the WASM output.
  */
-import type { Summary, Journey, JourneyMessage, JourneyMoment, PersonBuckets, PersonStat, PersonPhrases, SentimentDay, SentimentOverall, Count } from "../types";
+import type {
+  Summary,
+  Journey,
+  JourneyMessage,
+  JourneyMoment,
+  PersonBuckets,
+  PersonStat,
+  PersonPhrases,
+  SentimentDay,
+  SentimentOverall,
+  Count,
+} from "../types";
 
-export const createMockCount = (label: string, value: number): Count => ({
+const createMockCount = (label: string, value: number): Count => ({
   label,
   value,
 });
 
-export const createMockJourneyMessage = (
+const createMockJourneyMessage = (
   sender: string,
   text: string,
   timestamp: string,
-  is_you = false
+  is_you = false,
 ): JourneyMessage => ({
   sender,
   text,
@@ -21,10 +32,10 @@ export const createMockJourneyMessage = (
   is_you,
 });
 
-export const createMockJourneyMoment = (
+const createMockJourneyMoment = (
   title: string,
   description: string,
-  messages: JourneyMessage[]
+  messages: JourneyMessage[],
 ): JourneyMoment => ({
   title,
   description,
@@ -33,7 +44,7 @@ export const createMockJourneyMoment = (
   sentiment_score: 0.5,
 });
 
-export const createMockJourney = (): Journey => ({
+const createMockJourney = (): Journey => ({
   first_day: "2024-01-15",
   last_day: "2024-12-01",
   total_days: 321,
@@ -58,25 +69,42 @@ export const createMockPersonBuckets = (name: string, messages: number): PersonB
   name,
   messages,
   hourly: Array.from({ length: 24 }, () => Math.floor(Math.random() * 100)),
-  daily: [120, 150, 180, 200, 190, 210, 140] as [number, number, number, number, number, number, number],
-  monthly: [50, 60, 70, 80, 90, 100, 110, 120, 130, 120, 100, 80] as [number, number, number, number, number, number, number, number, number, number, number, number],
+  daily: [120, 150, 180, 200, 190, 210, 140] as [
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+  ],
+  monthly: [50, 60, 70, 80, 90, 100, 110, 120, 130, 120, 100, 80] as [
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+  ],
 });
 
-export const createMockPersonStat = (name: string): PersonStat => ({
+const createMockPersonStat = (name: string): PersonStat => ({
   name,
   total_words: 15000,
   unique_words: 2500,
   longest_message_words: 150,
   average_words_per_message: 8.5,
-  top_emojis: [
-    createMockCount("😂", 234),
-    createMockCount("❤️", 189),
-    createMockCount("👍", 156),
-  ],
+  top_emojis: [createMockCount("😂", 234), createMockCount("❤️", 189), createMockCount("👍", 156)],
   dominant_color: undefined,
 });
 
-export const createMockPersonPhrases = (name: string): PersonPhrases => ({
+const createMockPersonPhrases = (name: string): PersonPhrases => ({
   name,
   phrases: [
     createMockCount("haha yeah", 45),
@@ -87,7 +115,7 @@ export const createMockPersonPhrases = (name: string): PersonPhrases => ({
   ],
 });
 
-export const createMockSentimentDay = (name: string, day: string): SentimentDay => ({
+const createMockSentimentDay = (name: string, day: string): SentimentDay => ({
   name,
   day,
   mean: 0.3,
@@ -96,7 +124,7 @@ export const createMockSentimentDay = (name: string, day: string): SentimentDay 
   neg: 15,
 });
 
-export const createMockSentimentOverall = (name: string): SentimentOverall => ({
+const createMockSentimentOverall = (name: string): SentimentOverall => ({
   name,
   mean: 0.35,
   pos: 48,
@@ -110,17 +138,17 @@ export const createMockSentimentOverall = (name: string): SentimentOverall => ({
  */
 export const createMockSummary = (): Summary => ({
   total_messages: 15432,
-  by_sender: [
-    createMockCount("Alice", 8234),
-    createMockCount("You", 7198),
-  ],
+  by_sender: [createMockCount("Alice", 8234), createMockCount("You", 7198)],
   daily: [
     createMockCount("2024-11-28", 45),
     createMockCount("2024-11-29", 67),
     createMockCount("2024-11-30", 89),
     createMockCount("2024-12-01", 52),
   ],
-  hourly: Array.from({ length: 24 }, (_, i) => ({ hour: i, value: Math.floor(Math.random() * 500) })),
+  hourly: Array.from({ length: 24 }, (_, i) => ({
+    hour: i,
+    value: Math.floor(Math.random() * 500),
+  })),
   top_emojis: [
     createMockCount("😂", 523),
     createMockCount("❤️", 412),
@@ -154,16 +182,12 @@ export const createMockSummary = (): Summary => ({
   ],
   weekly: Array.from({ length: 7 }, (_, i) => createMockCount(`Week ${i + 1}`, 200 + i * 50)),
   monthly: Array.from({ length: 12 }, (_, i) => createMockCount(`Month ${i + 1}`, 1000 + i * 100)),
-  share_of_speech: [
-    createMockCount("Alice", 53.4),
-    createMockCount("You", 46.6),
-  ],
-  buckets_by_person: [
-    createMockPersonBuckets("Alice", 8234),
-    createMockPersonBuckets("You", 7198),
-  ],
+  share_of_speech: [createMockCount("Alice", 53.4), createMockCount("You", 46.6)],
+  buckets_by_person: [createMockPersonBuckets("Alice", 8234), createMockPersonBuckets("You", 7198)],
   word_cloud: Array.from({ length: 50 }, (_, i) => createMockCount(`word${i}`, 500 - i * 10)),
-  word_cloud_no_stop: Array.from({ length: 50 }, (_, i) => createMockCount(`content${i}`, 400 - i * 8)),
+  word_cloud_no_stop: Array.from({ length: 50 }, (_, i) =>
+    createMockCount(`content${i}`, 400 - i * 8),
+  ),
   emoji_cloud: [
     createMockCount("😂", 523),
     createMockCount("❤️", 412),
@@ -189,14 +213,8 @@ export const createMockSummary = (): Summary => ({
     createMockCount("sounds good", 145),
     createMockCount("can't wait", 132),
   ],
-  per_person_phrases: [
-    createMockPersonPhrases("Alice"),
-    createMockPersonPhrases("You"),
-  ],
-  per_person_phrases_no_stop: [
-    createMockPersonPhrases("Alice"),
-    createMockPersonPhrases("You"),
-  ],
+  per_person_phrases: [createMockPersonPhrases("Alice"), createMockPersonPhrases("You")],
+  per_person_phrases_no_stop: [createMockPersonPhrases("Alice"), createMockPersonPhrases("You")],
   fun_facts: [
     {
       name: "Alice",
@@ -207,10 +225,7 @@ export const createMockSummary = (): Summary => ({
       top_emojis: ["😂", "❤️", "👍"],
     },
   ],
-  person_stats: [
-    createMockPersonStat("Alice"),
-    createMockPersonStat("You"),
-  ],
+  person_stats: [createMockPersonStat("Alice"), createMockPersonStat("You")],
   per_person_daily: [
     { name: "Alice", daily: [createMockCount("2024-12-01", 45)] },
     { name: "You", daily: [createMockCount("2024-12-01", 38)] },
@@ -219,14 +234,8 @@ export const createMockSummary = (): Summary => ({
     createMockSentimentDay("Alice", "2024-12-01"),
     createMockSentimentDay("You", "2024-12-01"),
   ],
-  sentiment_overall: [
-    createMockSentimentOverall("Alice"),
-    createMockSentimentOverall("You"),
-  ],
-  conversation_starters: [
-    createMockCount("Alice", 156),
-    createMockCount("You", 132),
-  ],
+  sentiment_overall: [createMockSentimentOverall("Alice"), createMockSentimentOverall("You")],
+  conversation_starters: [createMockCount("Alice", 156), createMockCount("You", 132)],
   conversation_count: 288,
   journey: createMockJourney(),
 });

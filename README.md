@@ -15,7 +15,7 @@
 
 <br />
 
-Client-side WhatsApp chat analytics with a React/Vite UI using Rust, Polars, and WASM. Everything runs locally in the browser.
+Client-side WhatsApp chat analytics with a React/Vite UI powered by a Rust + regex parser compiled to WASM. Everything runs locally in the browser.
 
 ## Prerequisites
 - Node.js 20+
