@@ -123,6 +123,15 @@ export default function Dashboard() {
     setExportError(null);
     setExporting(true);
 
+    // html-to-image mis-renders `backdrop-filter: blur()` (used on the cards and
+    // the sticky header) as blurry smears over the content — the real cause of
+    // the "blurry export". Neutralize it for the duration of the capture only.
+    // On the dark, translucent cards this has no visible effect on the live
+    // page, so unlike a DOM banner it does not cause any flash.
+    const deblur = document.createElement("style");
+    deblur.textContent =
+      "*{backdrop-filter:none !important;-webkit-backdrop-filter:none !important;}";
+
     try {
       const node = dashboardRef.current;
       const [{ toPng }, { jsPDF }] = await Promise.all([
@@ -130,44 +139,17 @@ export default function Dashboard() {
         import("jspdf"),
       ]);
 
-      // Temporarily add the class so the export banner is laid out and we can
-      // measure the true content size (including the banner). All measurements
-      // here are synchronous, so the browser performs layout but never paints.
-      // We strip the class again BEFORE the async capture below, which prevents
-      // the banner/logo from visibly flashing onto the live page during export.
-      node.classList.add("exporting");
+      document.head.appendChild(deblur);
 
       const width = Math.ceil(node.scrollWidth);
       const height = Math.ceil(node.scrollHeight + PDF_HEIGHT_BUFFER_PX);
-
-      // Capture the banner geometry (relative to the node) for the PDF hyperlink
-      // overlay while it is still laid out.
-      let bannerGeom: { left: number; top: number; width: number; height: number } | null = null;
-      const bannerEl = node.querySelector(".export-banner") as HTMLElement | null;
-      if (bannerEl) {
-        const nodeRect = node.getBoundingClientRect();
-        const bannerRect = bannerEl.getBoundingClientRect();
-        if (bannerRect.width > 0 && bannerRect.height > 0) {
-          bannerGeom = {
-            left: bannerRect.left - nodeRect.left,
-            top: bannerRect.top - nodeRect.top,
-            width: bannerRect.width,
-            height: bannerRect.height,
-          };
-        }
-      }
-
-      node.classList.remove("exporting");
-
       const scale = Math.min(PDF_MAX_SCALE, PDF_MAX_DIMENSION_PX / Math.max(width, height));
       const canvasWidth = Math.floor(width * scale);
       const canvasHeight = Math.floor(height * scale);
 
       // Render the clone at the final (super-sampled) resolution and scale its
-      // content up with a CSS transform. This makes the browser rasterize text
-      // crisply at the target size. The previous approach kept the SVG at 1x
-      // (width/height) and let jsPDF/canvas upscale the bitmap, which blurred
-      // all text. Here drawImage is effectively 1:1, so text stays sharp.
+      // content up with a CSS transform so text rasterizes crisply at that size
+      // (drawImage is then effectively 1:1, instead of upscaling a 1x bitmap).
       const imgData = await toPng(node, {
         pixelRatio: 1,
         cacheBust: true,
@@ -186,21 +168,26 @@ export default function Dashboard() {
           if (el.classList?.contains("export-hide")) return false;
           return true;
         },
-        onClone: (clonedDoc: Document) => {
-          const mainEl = clonedDoc.querySelector("main") as HTMLElement;
-          if (mainEl) mainEl.classList.add("exporting");
-          clonedDoc.querySelectorAll(".export-banner").forEach((el) => {
-            (el as HTMLElement).style.display = "inline-flex";
-          });
-          clonedDoc.querySelectorAll('link[href*="fonts.googleapis"]').forEach((el) => el.remove());
-        },
-      } as Parameters<typeof toPng>[1] & { onClone?: (doc: Document) => void });
+      });
 
-      const orientation = width >= height ? "landscape" : "portrait";
+      // Reserve a band at the top of the page for the branding banner, drawn
+      // with jsPDF vector text. Drawing it here (rather than capturing a DOM
+      // banner) keeps the logo off the live page entirely — no flash — while it
+      // still appears, crisply, in the exported PDF.
+      const band = Math.round(64 * scale);
+      const pageWidth = canvasWidth;
+      const pageHeight = canvasHeight + band;
+
+      const bgColor = getComputedStyle(document.body).backgroundColor;
+      const rgb = bgColor.match(/(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+      const [bgR, bgG, bgB] = rgb
+        ? [Number(rgb[1]), Number(rgb[2]), Number(rgb[3])]
+        : [5, 6, 10];
+
       const pdf = new jsPDF({
-        orientation,
+        orientation: pageWidth >= pageHeight ? "landscape" : "portrait",
         unit: "px",
-        format: [canvasWidth, canvasHeight],
+        format: [pageWidth, pageHeight],
         compress: true,
         // Without "px_scaling", jsPDF converts px → pt with a 96/72 (≈1.333)
         // factor, so the MediaBox is silently clamped at 14400 userUnits and the
@@ -208,30 +195,38 @@ export default function Dashboard() {
         // 72/96 (0.75) factor, keeping our PDF_MAX_DIMENSION_PX page within limits.
         hotfixes: ["px_scaling"],
       });
-      pdf.addImage(imgData, "PNG", 0, 0, canvasWidth, canvasHeight, undefined, "FAST");
 
-      const linkUrl = SITE_URL;
-      let linkX = 12;
-      let linkY = 12;
-      let linkWidth = Math.min(180, canvasWidth * 0.25);
-      let linkHeight = 48;
-      if (bannerGeom) {
-        linkX = Math.max(4, bannerGeom.left * scale);
-        linkY = Math.max(4, bannerGeom.top * scale);
-        linkWidth = Math.max(40, bannerGeom.width * scale);
-        linkHeight = Math.max(20, bannerGeom.height * scale);
-      }
+      pdf.setFillColor(bgR, bgG, bgB);
+      pdf.rect(0, 0, pageWidth, pageHeight, "F");
+      pdf.addImage(imgData, "PNG", 0, band, canvasWidth, canvasHeight, undefined, "FAST");
 
-      pdf.link(linkX, linkY, linkWidth, linkHeight, { url: linkUrl });
-      pdf.setFontSize(1);
-      pdf.textWithLink(" ", linkX + 1, linkY + linkHeight / 2, { url: linkUrl });
+      // Branding banner: "WA Analyzer" + tagline, as crisp vector text.
+      const padX = Math.round(20 * scale);
+      const baseline = Math.round(band * 0.6);
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(Math.round(20 * scale));
+      pdf.setTextColor(0x25, 0xd3, 0x66);
+      pdf.text("WA", padX, baseline);
+      const waWidth = pdf.getTextWidth("WA");
+      pdf.setTextColor(0xe9, 0xee, 0xf7);
+      pdf.text(" Analyzer", padX + waWidth, baseline);
+      const titleWidth = waWidth + pdf.getTextWidth(" Analyzer");
+
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(Math.round(11 * scale));
+      pdf.setTextColor(0x9f, 0xb2, 0xc8);
+      pdf.text("WhatsApp insights in seconds", padX + titleWidth + Math.round(14 * scale), baseline);
+
+      // Make the whole banner a clickable backlink.
+      pdf.link(0, 0, pageWidth, band, { url: SITE_URL });
+
       pdf.save("whatsapp-dashboard.pdf");
     } catch (err) {
       console.error(err);
       setExportError("Failed to export PDF. Please try again.");
     } finally {
+      deblur.remove();
       setExporting(false);
-      dashboardRef.current?.classList.remove("exporting");
     }
   }
 
@@ -256,18 +251,10 @@ export default function Dashboard() {
         />
       )}
 
-      <section className="container grid-gap-2xl">
-        <div className="dashboard-header">
-          <div>
-            <div className="export-banner" aria-hidden={!exporting}>
-              <a href={SITE_URL} target="_blank" rel="noreferrer" className="export-banner-link">
-                <span className="logo dashboard-logo">
-                  <span className="text-whatsapp">WA</span> Analyzer
-                </span>
-                <span className="export-tagline">WhatsApp insights in seconds</span>
-              </a>
-            </div>
-            <h2 className="dashboard-title">Dashboard</h2>
+       <section className="container grid-gap-2xl">
+         <div className="dashboard-header">
+           <div>
+             <h2 className="dashboard-title">Dashboard</h2>
             {!hasData && (
               <p className="dashboard-subtitle">Drop your exported WhatsApp .txt.</p>
             )}

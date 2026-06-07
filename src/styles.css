@@ -37,30 +37,6 @@ body::before {
   z-index: -1;
 }
 
-.export-banner {
-  display: none;
-  margin-bottom: 8px;
-}
-
-.export-banner-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  color: var(--text);
-  text-decoration: none;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
-}
-
-.export-tagline {
-  color: var(--muted);
-  font-size: 13px;
-  font-weight: 600;
-}
-
 a {
   color: inherit;
   text-decoration: none;
@@ -198,12 +174,6 @@ section {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-}
-
-/* Show the export banner when exporting */
-.exporting .export-banner {
-  display: inline-flex;
-  align-items: center;
 }
 
 .footer {
@@ -488,10 +458,6 @@ section {
 .dashboard-subtitle {
   color: var(--muted);
   margin: 0;
-}
-
-.dashboard-logo {
-  font-size: 18px;
 }
 
 /* Export controls */
