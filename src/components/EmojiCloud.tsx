@@ -10,6 +10,11 @@ export type CloudWord = {
 const COLORS = CHART_COLORS;
 const FONT_FAMILY = EMOJI_CLOUD_FONT;
 
+// Debounce window for resize-driven relayout. Coalesces the burst of
+// ResizeObserver ticks emitted while a window is being dragged/resized so the
+// d3-cloud layout runs at most once per settled size instead of every frame.
+const RESIZE_DEBOUNCE_MS = 120;
+
 export default function EmojiCloud({
   words,
   colors = COLORS,
@@ -28,7 +33,10 @@ export default function EmojiCloud({
     [words]
   );
 
-  // Measure container width once on mount and on resize
+  // Measure container width on mount and on resize. The initial measurement is
+  // synchronous so the first layout is not delayed, but subsequent resize ticks
+  // are debounced so dragging/resizing the window doesn't thrash the expensive
+  // d3-cloud relayout on every observer callback.
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -36,9 +44,19 @@ export default function EmojiCloud({
     const measure = () => setWidth(el.clientWidth || 0);
     measure();
 
-    const ro = new ResizeObserver(measure);
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const ro = new ResizeObserver(() => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = null;
+        measure();
+      }, RESIZE_DEBOUNCE_MS);
+    });
     ro.observe(el);
-    return () => ro.disconnect();
+    return () => {
+      if (timer) clearTimeout(timer);
+      ro.disconnect();
+    };
   }, []);
 
   // Run d3-cloud layout when data or size changes
