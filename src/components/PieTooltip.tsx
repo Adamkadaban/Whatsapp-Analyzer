@@ -1,6 +1,6 @@
 import type { TooltipProps } from "recharts";
 
-export type SenderDatum = { name: string; value: number };
+type SenderDatum = { name: string; value: number };
 
 export default function PieTooltip({ active, payload }: TooltipProps<number, string>) {
   if (!active || !payload?.length) return null;

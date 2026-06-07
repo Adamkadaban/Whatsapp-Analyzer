@@ -3,7 +3,7 @@ import type { Summary } from "../types";
 import { calcLongestStreak, type DailyDatum } from "../streak";
 import { MONTH_LABELS, WEEKDAY_LABELS } from "../constants";
 
-export interface KpiDatum {
+interface KpiDatum {
   label: string;
   value: string;
   detail?: string;
