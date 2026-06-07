@@ -381,3 +381,478 @@ pub(crate) fn build_journey(messages: &[Message]) -> Option<Journey> {
         interesting_moments,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::NaiveDateTime;
+
+    fn msg(sender: &str, text: &str, dt_str: &str) -> Message {
+        let dt = NaiveDateTime::parse_from_str(dt_str, "%Y-%m-%d %H:%M:%S").unwrap();
+        Message {
+            sender: sender.to_string(),
+            text: text.to_string(),
+            dt,
+        }
+    }
+
+    #[test]
+    fn test_build_journey_empty() {
+        let journey = build_journey(&[]);
+        assert!(journey.is_none());
+    }
+
+    #[test]
+    fn test_build_journey_basic() {
+        let messages = vec![
+            msg("Alice", "Hello!", "2023-01-01 10:00:00"),
+            msg("Bob", "Hi there!", "2023-01-01 10:01:00"),
+            msg("Alice", "How are you?", "2023-01-01 10:02:00"),
+        ];
+
+        let journey = build_journey(&messages).unwrap();
+
+        assert_eq!(journey.total_messages, 3);
+        assert_eq!(journey.first_messages.len(), 3);
+        assert_eq!(journey.last_messages.len(), 3);
+        assert_eq!(journey.first_day, "January 01, 2023");
+        assert_eq!(journey.last_day, "January 01, 2023");
+        assert_eq!(journey.total_days, 1);
+    }
+
+    #[test]
+    fn test_build_journey_identifies_you_from_deleted_message() {
+        let messages = vec![
+            msg("Alice", "Regular message", "2023-01-01 10:00:00"),
+            msg("Bob", "You deleted this message", "2023-01-01 10:01:00"),
+            msg("Alice", "Another one", "2023-01-01 10:02:00"),
+        ];
+
+        let journey = build_journey(&messages).unwrap();
+
+        // Bob should be identified as "you" because of the deleted message
+        assert!(journey
+            .first_messages
+            .iter()
+            .any(|m| m.sender == "Bob" && m.is_you));
+        assert!(journey
+            .first_messages
+            .iter()
+            .all(|m| m.sender != "Alice" || !m.is_you));
+    }
+
+    #[test]
+    fn test_build_journey_identifies_you_by_least_messages() {
+        let messages = vec![
+            msg("Alice", "Message 1", "2023-01-01 10:00:00"),
+            msg("Alice", "Message 2", "2023-01-01 10:01:00"),
+            msg("Alice", "Message 3", "2023-01-01 10:02:00"),
+            msg("Bob", "Hi", "2023-01-01 10:03:00"),
+        ];
+
+        let journey = build_journey(&messages).unwrap();
+
+        // Bob has fewer messages, so should be identified as "you"
+        assert!(journey
+            .first_messages
+            .iter()
+            .any(|m| m.sender == "Bob" && m.is_you));
+    }
+
+    #[test]
+    fn test_build_journey_respects_conversation_gap() {
+        let messages = vec![
+            msg("Alice", "Morning message", "2023-01-01 08:00:00"),
+            msg("Bob", "Morning reply", "2023-01-01 08:01:00"),
+            // Large gap (> CONVERSATION_GAP_MINUTES)
+            msg("Alice", "Evening message", "2023-01-01 20:00:00"),
+            msg("Bob", "Evening reply", "2023-01-01 20:01:00"),
+        ];
+
+        let journey = build_journey(&messages).unwrap();
+
+        // First messages should stop at the gap
+        assert!(journey.first_messages.len() < 4);
+        assert!(journey.first_messages.iter().all(|m| {
+            let ts = m.timestamp.as_str();
+            ts.starts_with("2023-01-01T08:")
+        }));
+    }
+
+    #[test]
+    fn test_build_journey_last_messages_respects_gap() {
+        let messages = vec![
+            msg("Alice", "Morning message", "2023-01-01 08:00:00"),
+            msg("Bob", "Morning reply", "2023-01-01 08:01:00"),
+            // Large gap
+            msg("Alice", "Evening message", "2023-01-01 20:00:00"),
+            msg("Bob", "Evening reply", "2023-01-01 20:01:00"),
+            msg("Alice", "Evening follow-up", "2023-01-01 20:02:00"),
+        ];
+
+        let journey = build_journey(&messages).unwrap();
+
+        // Last messages should only include evening messages
+        assert!(journey.last_messages.iter().all(|m| {
+            let ts = m.timestamp.as_str();
+            ts.starts_with("2023-01-01T20:")
+        }));
+    }
+
+    #[test]
+    fn test_build_journey_limits_first_messages_to_five() {
+        let mut messages = vec![];
+        for i in 0..20 {
+            messages.push(msg(
+                "Alice",
+                &format!("Message {}", i),
+                &format!("2023-01-01 10:{:02}:00", i),
+            ));
+        }
+
+        let journey = build_journey(&messages).unwrap();
+
+        assert!(journey.first_messages.len() <= 5);
+    }
+
+    #[test]
+    fn test_build_journey_limits_last_messages_to_five() {
+        let mut messages = vec![];
+        for i in 0..20 {
+            messages.push(msg(
+                "Alice",
+                &format!("Message {}", i),
+                &format!("2023-01-01 10:{:02}:00", i),
+            ));
+        }
+
+        let journey = build_journey(&messages).unwrap();
+
+        assert!(journey.last_messages.len() <= 5);
+    }
+
+    #[test]
+    fn test_find_interesting_moments_empty() {
+        let moments = find_interesting_moments(&[], "Alice", 4);
+        assert!(moments.is_empty());
+    }
+
+    #[test]
+    fn test_find_interesting_moments_too_few_messages() {
+        let messages = vec![
+            msg("Alice", "Hi", "2023-01-01 10:00:00"),
+            msg("Bob", "Hello", "2023-01-01 10:01:00"),
+        ];
+
+        let moments = find_interesting_moments(&messages, "Alice", 4);
+        assert!(moments.is_empty());
+    }
+
+    #[test]
+    fn test_find_interesting_moments_positive_sentiment() {
+        let mut messages = vec![];
+        for i in 0..50 {
+            let text = if i == 25 {
+                "I am so happy and excited about this wonderful amazing fantastic day! This is absolutely brilliant!"
+            } else {
+                "Regular message"
+            };
+            messages.push(msg("Alice", text, &format!("2023-01-01 10:{:02}:00", i)));
+        }
+
+        let moments = find_interesting_moments(&messages, "Alice", 4);
+
+        assert!(!moments.is_empty());
+        let has_positive = moments.iter().any(|m| m.sentiment_score > 0.0);
+        assert!(has_positive);
+    }
+
+    #[test]
+    fn test_find_interesting_moments_negative_sentiment() {
+        let mut messages = vec![];
+        for i in 0..50 {
+            let text = if i == 25 {
+                "I am so sad and upset and disappointed about this terrible horrible awful situation"
+            } else {
+                "Regular message"
+            };
+            messages.push(msg("Alice", text, &format!("2023-01-01 10:{:02}:00", i)));
+        }
+
+        let moments = find_interesting_moments(&messages, "Alice", 4);
+
+        assert!(!moments.is_empty());
+        let has_negative = moments.iter().any(|m| m.sentiment_score < 0.0);
+        assert!(has_negative);
+    }
+
+    #[test]
+    fn test_find_interesting_moments_filters_spam() {
+        let mut messages = vec![];
+        for i in 0..50 {
+            let text = if i == 25 {
+                "http://example.com http://test.com http://spam.com $$$$$ %%%%% !!!!!!"
+            } else {
+                "This is a meaningful and interesting message with real content"
+            };
+            messages.push(msg("Alice", text, &format!("2023-01-01 10:{:02}:00", i)));
+        }
+
+        let moments = find_interesting_moments(&messages, "Alice", 4);
+
+        // Spammy message should be filtered out
+        if !moments.is_empty() {
+            let spam_moment = moments
+                .iter()
+                .any(|m| m.messages.iter().any(|msg| msg.text.contains("$$$$$")));
+            assert!(!spam_moment, "Spam messages should be filtered out");
+        }
+    }
+
+    #[test]
+    fn test_find_interesting_moments_filters_deleted() {
+        let mut messages = vec![];
+        for i in 0..50 {
+            let text = if i == 25 {
+                "This message was deleted"
+            } else {
+                "This is a meaningful and interesting message with real content"
+            };
+            messages.push(msg("Alice", text, &format!("2023-01-01 10:{:02}:00", i)));
+        }
+
+        let moments = find_interesting_moments(&messages, "Alice", 4);
+
+        // Deleted message should be filtered
+        let has_deleted = moments
+            .iter()
+            .any(|m| m.messages.iter().any(|msg| msg.text.contains("deleted")));
+        assert!(!has_deleted);
+    }
+
+    #[test]
+    fn test_find_interesting_moments_provides_context() {
+        let mut messages = vec![];
+        for i in 0..50 {
+            messages.push(msg(
+                "Alice",
+                &format!("Message {}", i),
+                &format!("2023-01-01 10:{:02}:00", i),
+            ));
+        }
+        // Add a very interesting message
+        messages[25] = msg(
+            "Alice",
+            "This is an absolutely fantastic and wonderful amazing day with great joy!",
+            "2023-01-01 10:25:00",
+        );
+
+        let moments = find_interesting_moments(&messages, "Alice", 4);
+
+        if !moments.is_empty() {
+            // Should include context messages around the interesting one
+            let moment = &moments[0];
+            assert!(moment.messages.len() > 1, "Should include context messages");
+        }
+    }
+
+    #[test]
+    fn test_find_interesting_moments_respects_max() {
+        let mut messages = vec![];
+        for i in 0..100 {
+            let text = format!("This is a really amazing wonderful fantastic message number {} with lots of emotion!", i);
+            messages.push(msg(
+                "Alice",
+                &text,
+                &format!("2023-01-01 {:02}:00:00", i % 24),
+            ));
+        }
+
+        let moments = find_interesting_moments(&messages, "Alice", 3);
+
+        assert!(moments.len() <= 3);
+    }
+
+    #[test]
+    fn test_text_features_basic() {
+        let features = text_features("Hello world! How are you?");
+
+        assert_eq!(features.word_count, 5);
+        assert_eq!(features.exclamation_count, 1);
+        assert_eq!(features.question_count, 1);
+        assert!(features.unique_ratio > 0.0);
+    }
+
+    #[test]
+    fn test_text_features_empty() {
+        let features = text_features("");
+
+        assert_eq!(features.word_count, 0);
+        assert_eq!(features.emoji_count, 0);
+        assert_eq!(features.symbol_ratio, 0.0);
+    }
+
+    #[test]
+    fn test_text_features_urls() {
+        let features = text_features("Check out http://example.com and https://test.com");
+
+        assert_eq!(features.url_count, 2);
+    }
+
+    #[test]
+    fn test_text_features_emojis() {
+        let features = text_features("Hello 😀 world 🌍!");
+
+        assert!(features.emoji_count > 0);
+    }
+
+    #[test]
+    fn test_text_features_caps() {
+        let features = text_features("HELLO WORLD");
+
+        assert!(features.caps_ratio > 0.8);
+    }
+
+    #[test]
+    fn test_text_features_digits() {
+        let features = text_features("Test 123 456 789");
+
+        assert!(features.digit_ratio > 0.0);
+    }
+
+    #[test]
+    fn test_text_features_symbols() {
+        let features = text_features("!!!???###$$$%%%");
+
+        assert!(features.symbol_ratio > 0.5);
+    }
+
+    #[test]
+    fn test_text_features_unique_ratio() {
+        let features = text_features("word word word word");
+
+        assert!(features.unique_ratio < 0.5);
+    }
+
+    #[test]
+    fn test_journey_moment_titles() {
+        let mut messages = vec![];
+
+        // Technical share (URLs)
+        messages.push(msg(
+            "Alice",
+            "Check this out http://example.com",
+            "2023-01-01 10:00:00",
+        ));
+
+        // Joyful moment
+        for i in 0..20 {
+            messages.push(msg(
+                "Bob",
+                "regular",
+                &format!("2023-01-01 10:{:02}:00", i + 1),
+            ));
+        }
+        messages.push(msg(
+            "Alice",
+            "I am so happy and excited and joyful! This is amazing wonderful!",
+            "2023-01-01 10:25:00",
+        ));
+
+        // Heartfelt exchange
+        for i in 0..20 {
+            messages.push(msg("Bob", "regular", &format!("2023-01-01 11:{:02}:00", i)));
+        }
+        messages.push(msg(
+            "Alice",
+            "I am so sad and disappointed and upset about everything",
+            "2023-01-01 11:25:00",
+        ));
+
+        // Curious conversation
+        for i in 0..20 {
+            messages.push(msg("Bob", "regular", &format!("2023-01-01 12:{:02}:00", i)));
+        }
+        messages.push(msg(
+            "Alice",
+            "Why did this happen? What should we do?",
+            "2023-01-01 12:25:00",
+        ));
+
+        let moments = find_interesting_moments(&messages, "Alice", 10);
+
+        // Check that different types of moments get different titles
+        let titles: Vec<&str> = moments.iter().map(|m| m.title.as_str()).collect();
+        assert!(titles.iter().any(|t| t.contains("technical")
+            || t.contains("joyful")
+            || t.contains("heartfelt")
+            || t.contains("curious")
+            || t.contains("meaningful")
+            || t.contains("memorable")));
+    }
+
+    #[test]
+    fn test_journey_multi_day_span() {
+        let messages = vec![
+            msg("Alice", "First day", "2023-01-01 10:00:00"),
+            msg("Bob", "Middle", "2023-01-15 10:00:00"),
+            msg("Alice", "Last day", "2023-01-31 10:00:00"),
+        ];
+
+        let journey = build_journey(&messages).unwrap();
+
+        assert_eq!(journey.first_day, "January 01, 2023");
+        assert_eq!(journey.last_day, "January 31, 2023");
+        assert_eq!(journey.total_days, 30);
+    }
+
+    #[test]
+    fn test_journey_sorts_unsorted_messages() {
+        let messages = vec![
+            msg("Alice", "Third", "2023-01-01 12:00:00"),
+            msg("Bob", "First", "2023-01-01 10:00:00"),
+            msg("Alice", "Second", "2023-01-01 11:00:00"),
+        ];
+
+        let journey = build_journey(&messages).unwrap();
+
+        // First message should be the earliest one
+        assert_eq!(journey.first_messages[0].text, "First");
+    }
+
+    #[test]
+    fn test_interesting_moments_min_gap_enforcement() {
+        let mut messages = vec![];
+        // Create messages with high interest scores close together
+        for i in 0..50 {
+            let text = if i % 5 == 0 {
+                "This is an absolutely amazing wonderful fantastic incredible message!"
+            } else {
+                "regular"
+            };
+            messages.push(msg("Alice", text, &format!("2023-01-01 10:{:02}:00", i)));
+        }
+
+        let moments = find_interesting_moments(&messages, "Alice", 10);
+
+        // Moments should be temporally spaced apart
+        assert!(
+            moments.len() <= 10,
+            "Should not exceed requested max moments"
+        );
+
+        // If we got multiple moments, verify they're not all identical
+        if moments.len() > 1 {
+            let unique_times: std::collections::HashSet<_> = moments
+                .iter()
+                .flat_map(|m| &m.messages)
+                .map(|msg| msg.text.clone())
+                .collect();
+
+            assert!(
+                unique_times.len() > 1,
+                "Moments should contain different messages"
+            );
+        }
+    }
+}

@@ -214,14 +214,24 @@ pub(crate) fn timeline(messages: &[Message]) -> Vec<Count> {
     }
     let mut sorted = messages.to_vec();
     sorted.sort_by_key(|m| m.dt);
-    let start = sorted.first().unwrap().dt.date();
-    let end = sorted.last().unwrap().dt.date();
+    // Graceful handling: `sorted` is non-empty (checked above), but avoid unwrap so a
+    // future refactor can never turn malformed input into a panic under panic=abort.
+    let (Some(first), Some(last)) = (sorted.first(), sorted.last()) else {
+        return Vec::new();
+    };
+    let start = first.dt.date();
+    let end = last.dt.date();
 
     let mut map = BTreeMap::new();
     let mut cursor = start;
     while cursor <= end {
         map.insert(cursor, 0u32);
-        cursor = cursor.succ_opt().unwrap();
+        // `succ_opt()` only returns None at chrono's max representable date; stop rather
+        // than panic so an extreme parsed year can't abort the WASM module.
+        match cursor.succ_opt() {
+            Some(next) => cursor = next,
+            None => break,
+        }
     }
     for m in sorted {
         let d = m.dt.date();
@@ -434,4 +444,289 @@ pub(crate) fn person_stats(messages: &[Message]) -> Vec<PersonStat> {
 
     stats.sort_by_key(|s| std::cmp::Reverse(s.total_words));
     stats
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::NaiveDateTime;
+
+    fn msg(sender: &str, text: &str, dt_str: &str) -> Message {
+        Message {
+            dt: NaiveDateTime::parse_from_str(dt_str, "%Y-%m-%d %H:%M:%S").unwrap(),
+            sender: sender.to_string(),
+            text: text.to_string(),
+        }
+    }
+
+    #[test]
+    fn count_by_sender_sorted_desc() {
+        let messages = vec![
+            msg("Alice", "a", "2023-01-01 10:00:00"),
+            msg("Bob", "b", "2023-01-01 10:01:00"),
+            msg("Alice", "c", "2023-01-01 10:02:00"),
+        ];
+        let counts = count_by_sender(&messages);
+        assert_eq!(counts[0].label, "Alice");
+        assert_eq!(counts[0].value, 2);
+        assert_eq!(counts[1].value, 1);
+    }
+
+    #[test]
+    fn count_by_sender_empty() {
+        assert!(count_by_sender(&[]).is_empty());
+    }
+
+    #[test]
+    fn daily_counts_groups_by_date() {
+        let messages = vec![
+            msg("A", "x", "2023-01-01 10:00:00"),
+            msg("A", "y", "2023-01-01 23:00:00"),
+            msg("A", "z", "2023-01-02 00:30:00"),
+        ];
+        let daily = daily_counts(&messages);
+        assert_eq!(daily.len(), 2);
+        assert_eq!(daily[0].label, "2023-01-01");
+        assert_eq!(daily[0].value, 2);
+        assert_eq!(daily[1].value, 1);
+    }
+
+    #[test]
+    fn daily_counts_empty() {
+        assert!(daily_counts(&[]).is_empty());
+    }
+
+    #[test]
+    fn longest_streak_empty_is_none() {
+        assert!(longest_streak(&[]).is_none());
+    }
+
+    #[test]
+    fn longest_streak_single_day() {
+        let daily = vec![Count {
+            label: "2024-01-01".into(),
+            value: 3,
+        }];
+        let (len, start, end) = longest_streak(&daily).unwrap();
+        assert_eq!(len, 1);
+        assert_eq!(start, "2024-01-01");
+        assert_eq!(end, "2024-01-01");
+    }
+
+    #[test]
+    fn longest_streak_ignores_unparseable_labels() {
+        let daily = vec![
+            Count {
+                label: "garbage".into(),
+                value: 1,
+            },
+            Count {
+                label: "2024-01-01".into(),
+                value: 1,
+            },
+            Count {
+                label: "2024-01-02".into(),
+                value: 1,
+            },
+        ];
+        let (len, _, _) = longest_streak(&daily).unwrap();
+        assert_eq!(len, 2);
+    }
+
+    #[test]
+    fn longest_streak_from_raw_empty() {
+        assert!(longest_streak_from_raw("").is_none());
+        assert!(longest_streak_from_raw("no chat here").is_none());
+    }
+
+    #[test]
+    fn longest_streak_from_raw_counts_consecutive() {
+        let raw = "[1/1/24, 1:00:00 PM] A: a\n[1/2/24, 1:00:00 PM] A: b\n[1/4/24, 1:00:00 PM] A: c";
+        let (len, _, _) = longest_streak_from_raw(raw).unwrap();
+        assert_eq!(len, 2);
+    }
+
+    #[test]
+    fn hourly_counts_has_24_buckets() {
+        let messages = vec![
+            msg("A", "x", "2023-01-01 00:30:00"),
+            msg("A", "y", "2023-01-01 00:45:00"),
+            msg("A", "z", "2023-01-01 23:00:00"),
+        ];
+        let hourly = hourly_counts(&messages);
+        assert_eq!(hourly.len(), 24);
+        assert_eq!(hourly[0].value, 2);
+        assert_eq!(hourly[23].value, 1);
+        assert_eq!(hourly[12].value, 0);
+    }
+
+    #[test]
+    fn weekly_counts_seven_buckets() {
+        // 2023-01-01 is a Sunday.
+        let messages = vec![
+            msg("A", "x", "2023-01-01 10:00:00"),
+            msg("A", "y", "2023-01-02 10:00:00"),
+        ];
+        let weekly = weekly_counts(&messages);
+        assert_eq!(weekly.len(), 7);
+        assert_eq!(weekly[0].label, "Sun");
+        assert_eq!(weekly[0].value, 1);
+        assert_eq!(weekly[1].label, "Mon");
+        assert_eq!(weekly[1].value, 1);
+    }
+
+    #[test]
+    fn monthly_counts_groups_year_month() {
+        let messages = vec![
+            msg("A", "x", "2023-01-15 10:00:00"),
+            msg("A", "y", "2023-01-20 10:00:00"),
+            msg("A", "z", "2023-03-01 10:00:00"),
+        ];
+        let monthly = monthly_counts(&messages);
+        assert_eq!(monthly.len(), 2);
+        assert_eq!(monthly[0].label, "2023-01");
+        assert_eq!(monthly[0].value, 2);
+        assert_eq!(monthly[1].label, "2023-03");
+    }
+
+    #[test]
+    fn deleted_counts_distinguishes_you_and_others() {
+        let messages = vec![
+            msg("A", "You deleted this message", "2023-01-01 10:00:00"),
+            msg("B", "This message was deleted", "2023-01-01 10:01:00"),
+            msg("B", "This message was deleted", "2023-01-01 10:02:00"),
+            msg("A", "normal", "2023-01-01 10:03:00"),
+        ];
+        let (you, others) = deleted_counts(&messages);
+        assert_eq!(you, 1);
+        assert_eq!(others, 2);
+    }
+
+    #[test]
+    fn timeline_empty_is_empty() {
+        assert!(timeline(&[]).is_empty());
+    }
+
+    #[test]
+    fn timeline_fills_gaps_with_zero() {
+        let messages = vec![
+            msg("A", "x", "2023-01-01 10:00:00"),
+            msg("A", "y", "2023-01-03 10:00:00"),
+        ];
+        let tl = timeline(&messages);
+        assert_eq!(tl.len(), 3);
+        assert_eq!(tl[0].label, "2023-01-01");
+        assert_eq!(tl[0].value, 1);
+        assert_eq!(tl[1].label, "2023-01-02");
+        assert_eq!(tl[1].value, 0);
+        assert_eq!(tl[2].value, 1);
+    }
+
+    #[test]
+    fn timeline_single_message_single_entry() {
+        let messages = vec![msg("A", "x", "2023-01-01 10:00:00")];
+        let tl = timeline(&messages);
+        assert_eq!(tl.len(), 1);
+        assert_eq!(tl[0].value, 1);
+    }
+
+    #[test]
+    fn buckets_by_person_aggregates() {
+        let messages = vec![
+            msg("A", "x", "2023-01-01 01:00:00"), // Sun, Jan, 01h
+            msg("A", "y", "2023-01-01 13:00:00"),
+            msg("B", "z", "2023-02-02 01:00:00"),
+        ];
+        let buckets = buckets_by_person(&messages);
+        let a = buckets.iter().find(|b| b.name == "A").unwrap();
+        assert_eq!(a.messages, 2);
+        assert_eq!(a.hourly[1], 1);
+        assert_eq!(a.hourly[13], 1);
+        assert_eq!(a.monthly[0], 2);
+        // Sorted by message count desc -> A first.
+        assert_eq!(buckets[0].name, "A");
+    }
+
+    #[test]
+    fn buckets_by_person_empty() {
+        assert!(buckets_by_person(&[]).is_empty());
+    }
+
+    #[test]
+    fn per_person_daily_sorted_by_name() {
+        let messages = vec![
+            msg("Bob", "x", "2023-01-01 10:00:00"),
+            msg("Alice", "y", "2023-01-01 10:00:00"),
+            msg("Alice", "z", "2023-01-02 10:00:00"),
+        ];
+        let pp = per_person_daily(&messages);
+        assert_eq!(pp[0].name, "Alice");
+        assert_eq!(pp[0].daily.len(), 2);
+        assert_eq!(pp[1].name, "Bob");
+    }
+
+    #[test]
+    fn fun_facts_skips_media_and_counts_words() {
+        let messages = vec![
+            msg("A", "hello world foo", "2023-01-01 10:00:00"),
+            msg("A", "<Media omitted>", "2023-01-01 10:01:00"),
+            msg("A", "bar 😀", "2023-01-01 10:02:00"),
+        ];
+        let facts = fun_facts(&messages);
+        let a = facts.iter().find(|f| f.name == "A").unwrap();
+        // "hello world foo" = 3, "bar" = 1 (emoji not a word) -> 4.
+        assert_eq!(a.total_words, 4);
+        assert_eq!(a.longest_message_words, 3);
+        assert!(a.top_emojis.contains(&"😀".to_string()));
+    }
+
+    #[test]
+    fn fun_facts_empty() {
+        assert!(fun_facts(&[]).is_empty());
+    }
+
+    #[test]
+    fn person_stats_average_and_unique() {
+        let messages = vec![
+            msg("A", "hello hello world", "2023-01-01 10:00:00"),
+            msg("A", "world", "2023-01-01 10:01:00"),
+        ];
+        let stats = person_stats(&messages);
+        let a = stats.iter().find(|s| s.name == "A").unwrap();
+        assert_eq!(a.total_words, 4);
+        assert_eq!(a.unique_words, 2); // hello, world
+        assert!((a.average_words_per_message - 2.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn person_stats_all_media_has_zero_average() {
+        let messages = vec![msg("A", "<Media omitted>", "2023-01-01 10:00:00")];
+        let stats = person_stats(&messages);
+        let a = stats.iter().find(|s| s.name == "A").unwrap();
+        assert_eq!(a.total_words, 0);
+        assert_eq!(a.average_words_per_message, 0.0);
+    }
+
+    #[test]
+    fn conversation_initiations_empty() {
+        let (items, count) = conversation_initiations(&[], 30);
+        assert!(items.is_empty());
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn conversation_initiations_counts_gaps() {
+        let messages = vec![
+            msg("Alice", "hi", "2023-01-01 10:00:00"),
+            msg("Bob", "ok", "2023-01-01 10:10:00"),
+            // gap > 30 min -> new conversation, Bob initiates
+            msg("Bob", "new topic", "2023-01-01 11:00:01"),
+            msg("Alice", "reply", "2023-01-01 11:05:00"),
+        ];
+        let (items, count) = conversation_initiations(&messages, 30);
+        assert_eq!(count, 2);
+        let map: HashMap<_, _> = items.iter().map(|c| (c.label.as_str(), c.value)).collect();
+        assert_eq!(map.get("Alice"), Some(&1));
+        assert_eq!(map.get("Bob"), Some(&1));
+    }
 }

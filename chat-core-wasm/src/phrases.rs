@@ -573,3 +573,216 @@ struct PhraseRecord {
     tokens: Vec<String>,
     score: f64,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::NaiveDateTime;
+
+    fn msg(sender: &str, text: &str) -> Message {
+        Message {
+            dt: NaiveDateTime::parse_from_str("2023-01-01 10:00:00", "%Y-%m-%d %H:%M:%S").unwrap(),
+            sender: sender.to_string(),
+            text: text.to_string(),
+        }
+    }
+
+    #[test]
+    fn top_emojis_empty() {
+        assert!(top_emojis(&[], 5).is_empty());
+    }
+
+    #[test]
+    fn top_emojis_counts_and_truncates() {
+        let messages = vec![msg("A", "😀 😀 😢"), msg("B", "😀 👍")];
+        let counts = top_emojis(&messages, 1);
+        assert_eq!(counts.len(), 1);
+        assert_eq!(counts[0].label, "😀");
+        assert_eq!(counts[0].value, 3);
+    }
+
+    #[test]
+    fn top_emojis_handles_text_without_emoji() {
+        let messages = vec![msg("A", "plain text only")];
+        assert!(top_emojis(&messages, 5).is_empty());
+    }
+
+    #[test]
+    fn top_words_empty() {
+        assert!(top_words(&[], 10, true).is_empty());
+    }
+
+    #[test]
+    fn top_words_filters_short_alnum_tokens() {
+        let messages = vec![msg("A", "hi ok hello world hello")];
+        let words = top_words(&messages, 10, false);
+        let labels: Vec<&str> = words.iter().map(|c| c.label.as_str()).collect();
+        // "hi" and "ok" are short (<3) pure-alnum tokens -> dropped.
+        assert!(!labels.contains(&"hi"));
+        assert!(!labels.contains(&"ok"));
+        assert!(labels.contains(&"hello"));
+        let hello = words.iter().find(|c| c.label == "hello").unwrap();
+        assert_eq!(hello.value, 2);
+    }
+
+    #[test]
+    fn top_words_skips_media_omitted() {
+        let messages = vec![msg("A", "<Media omitted>"), msg("A", "hello world")];
+        let words = top_words(&messages, 10, false);
+        let labels: Vec<&str> = words.iter().map(|c| c.label.as_str()).collect();
+        assert!(labels.contains(&"hello"));
+        assert!(!labels.contains(&"omitted"));
+    }
+
+    #[test]
+    fn top_words_stopword_toggle() {
+        let messages = vec![msg("A", "the the hello world")];
+        let with_stop = top_words(&messages, 10, true);
+        let no_stop = top_words(&messages, 10, false);
+        assert!(!with_stop.iter().any(|c| c.label == "the"));
+        assert!(no_stop.iter().any(|c| c.label == "the"));
+    }
+
+    #[test]
+    fn word_cloud_empty() {
+        assert!(word_cloud(&[], 10, true).is_empty());
+    }
+
+    #[test]
+    fn word_cloud_counts_words() {
+        let messages = vec![msg("A", "apple apple banana")];
+        let cloud = word_cloud(&messages, 10, false);
+        let apple = cloud.iter().find(|c| c.label == "apple").unwrap();
+        assert_eq!(apple.value, 2);
+    }
+
+    #[test]
+    fn emoji_cloud_truncates() {
+        let messages = vec![msg("A", "😀 😢 👍 ❤️")];
+        let cloud = emoji_cloud(&messages, 2);
+        assert!(cloud.len() <= 2);
+    }
+
+    #[test]
+    fn top_phrases_empty() {
+        assert!(top_phrases(&[], 10, true).is_empty());
+    }
+
+    #[test]
+    fn top_phrases_detects_repeated_bigram() {
+        let messages = vec![
+            msg("A", "hello world hello world"),
+            msg("A", "hello world again"),
+        ];
+        let phrases = top_phrases(&messages, 10, true);
+        assert!(phrases.iter().any(|c| c.label == "hello world"));
+    }
+
+    #[test]
+    fn top_phrases_ignores_media_only() {
+        let messages = vec![msg("A", "<Media omitted>"), msg("A", "<Media omitted>")];
+        assert!(top_phrases(&messages, 10, true).is_empty());
+    }
+
+    #[test]
+    fn per_person_phrases_empty() {
+        assert!(per_person_phrases(&[], 10, true).is_empty());
+    }
+
+    #[test]
+    fn per_person_phrases_tracks_each_sender() {
+        let messages = vec![
+            msg("Alice", "good morning sunshine"),
+            msg("Alice", "good morning sunshine"),
+            msg("Bob", "see you later alligator"),
+            msg("Bob", "see you later alligator"),
+        ];
+        let pp = per_person_phrases(&messages, 10, true);
+        let alice = pp.iter().find(|p| p.name == "Alice").unwrap();
+        let bob = pp.iter().find(|p| p.name == "Bob").unwrap();
+        assert!(alice.phrases.iter().any(|c| c.label.contains("morning")));
+        assert!(bob.phrases.iter().any(|c| c.label.contains("later")));
+        // Sorted alphabetically by name.
+        assert_eq!(pp[0].name, "Alice");
+    }
+
+    #[test]
+    fn salient_phrases_empty() {
+        assert!(salient_phrases(&[], 10).is_empty());
+    }
+
+    #[test]
+    fn salient_phrases_surface_distinctive_pairs() {
+        let messages = vec![
+            msg("A", "i think we should go"),
+            msg("A", "i think it works"),
+            msg("A", "i think so too"),
+            msg("A", "quantum entanglement is wild"),
+            msg("A", "quantum entanglement feels magical"),
+            msg("A", "quantum entanglement again"),
+        ];
+        let salient = salient_phrases(&messages, 10);
+        assert!(!salient.is_empty());
+        assert!(salient.iter().any(|c| c.label == "quantum entanglement"));
+    }
+
+    #[test]
+    fn contains_subsequence_basic() {
+        let long = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+        let short = vec!["b".to_string(), "c".to_string()];
+        assert!(contains_subsequence(&long, &short));
+
+        let not_in = vec!["a".to_string(), "c".to_string()];
+        assert!(!contains_subsequence(&long, &not_in));
+    }
+
+    #[test]
+    fn contains_subsequence_edge_cases() {
+        let long = vec!["a".to_string(), "b".to_string()];
+        assert!(!contains_subsequence(&long, &[]));
+        // short longer than long.
+        let short = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+        assert!(!contains_subsequence(&long, &short));
+    }
+
+    #[test]
+    fn suppress_subphrases_drops_contained_shorter_phrase() {
+        let longer = PhraseRecord {
+            phrase: "good job my love".into(),
+            count: 5,
+            len: 4,
+            tokens: vec!["good".into(), "job".into(), "my".into(), "love".into()],
+            score: 100.0,
+        };
+        let shorter = PhraseRecord {
+            phrase: "my love".into(),
+            count: 5,
+            len: 2,
+            tokens: vec!["my".into(), "love".into()],
+            score: 50.0,
+        };
+        let kept = suppress_subphrases(vec![longer, shorter], 10);
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].phrase, "good job my love");
+    }
+
+    #[test]
+    fn suppress_subphrases_keeps_unrelated() {
+        let a = PhraseRecord {
+            phrase: "hello world".into(),
+            count: 3,
+            len: 2,
+            tokens: vec!["hello".into(), "world".into()],
+            score: 10.0,
+        };
+        let b = PhraseRecord {
+            phrase: "foo bar".into(),
+            count: 3,
+            len: 2,
+            tokens: vec!["foo".into(), "bar".into()],
+            score: 9.0,
+        };
+        let kept = suppress_subphrases(vec![a, b], 10);
+        assert_eq!(kept.len(), 2);
+    }
+}
