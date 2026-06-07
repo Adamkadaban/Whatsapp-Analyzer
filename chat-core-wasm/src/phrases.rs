@@ -515,7 +515,7 @@ pub(crate) fn per_person_phrases(
                 .collect::<Vec<_>>();
 
             let mut phrases = phrases;
-            phrases.sort_by(|a, b| b.value.cmp(&a.value));
+            phrases.sort_by_key(|p| std::cmp::Reverse(p.value));
 
             PersonPhrases { name, phrases }
         })
