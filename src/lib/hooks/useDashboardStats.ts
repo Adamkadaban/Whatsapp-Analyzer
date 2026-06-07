@@ -9,7 +9,7 @@ export interface KpiDatum {
   detail?: string;
 }
 
-interface DashboardStatsResult {
+export interface DashboardStatsResult {
   dailyData: DailyDatum[];
   busiestDay: DailyDatum | null;
   quietestDay: DailyDatum | null;
