@@ -9,7 +9,7 @@ exports[`Dashboard regression net > Functional: empty / near-empty summary > ren
       div.export-controls.export-hide
         div.switch-row
           div.export-dropdown
-            span.inline-flex
+            span.inline-flex[role=button]
           label.switch
             input
             span.slider
@@ -19,7 +19,7 @@ exports[`Dashboard regression net > Functional: empty / near-empty summary > ren
     div.card.grid-gap-md
       div.tag
       h3.card-header
-      div.chart-container-xl.chart-full-width
+      div.chart-container-xl.chart-full-width[role=img]
         div[testid=responsive-container]
           div[testid=area-chart]
             defs
@@ -77,7 +77,7 @@ exports[`Dashboard regression net > Functional: empty / near-empty summary > ren
         div
           div
             div
-        div.chart-container-sm
+        div.chart-container-sm[role=img]
           div[testid=responsive-container]
             div[testid=bar-chart]
               div[testid=legend]
@@ -86,7 +86,7 @@ exports[`Dashboard regression net > Functional: empty / near-empty summary > ren
           div
             div
             div
-        div.chart-container-sm
+        div.chart-container-sm[role=img]
           div[testid=responsive-container]
             div[testid=pie-chart]
               div[testid=pie]
@@ -96,7 +96,7 @@ exports[`Dashboard regression net > Functional: empty / near-empty summary > ren
           div
             div
             div
-        div.chart-container-md
+        div.chart-container-md[role=img]
           div[testid=responsive-container]
             div[testid=bar-chart]
               div[testid=bar]
@@ -104,7 +104,7 @@ exports[`Dashboard regression net > Functional: empty / near-empty summary > ren
         div
           div
             div
-        div.chart-container-lg
+        div.chart-container-lg[role=img]
           div[testid=responsive-container]
             div[testid=radar-chart]
               div[testid=legend]
@@ -112,7 +112,7 @@ exports[`Dashboard regression net > Functional: empty / near-empty summary > ren
         div
           div
             div
-        div.chart-container-lg
+        div.chart-container-lg[role=img]
           div[testid=responsive-container]
             div[testid=radar-chart]
               div[testid=legend]
@@ -154,7 +154,7 @@ exports[`Dashboard regression net > Visual structure: full data view > matches t
       div.export-controls.export-hide
         div.switch-row
           div.export-dropdown
-            span.inline-flex
+            span.inline-flex[role=button]
           label.switch
             input
             span.slider
@@ -164,7 +164,7 @@ exports[`Dashboard regression net > Visual structure: full data view > matches t
     div.card.grid-gap-md
       div.tag
       h3.card-header
-      div.chart-container-xl.chart-full-width
+      div.chart-container-xl.chart-full-width[role=img]
         div[testid=responsive-container]
           div[testid=area-chart]
             defs
@@ -253,7 +253,7 @@ exports[`Dashboard regression net > Visual structure: full data view > matches t
         div
           div
             div
-        div.chart-container-sm
+        div.chart-container-sm[role=img]
           div[testid=responsive-container]
             div[testid=bar-chart]
               div[testid=bar]
@@ -264,7 +264,7 @@ exports[`Dashboard regression net > Visual structure: full data view > matches t
           div
             div
             div
-        div.chart-container-sm
+        div.chart-container-sm[role=img]
           div[testid=responsive-container]
             div[testid=pie-chart]
               div[testid=pie]
@@ -276,7 +276,7 @@ exports[`Dashboard regression net > Visual structure: full data view > matches t
           div
             div
             div
-        div.chart-container-md
+        div.chart-container-md[role=img]
           div[testid=responsive-container]
             div[testid=bar-chart]
               div[testid=bar]
@@ -284,7 +284,7 @@ exports[`Dashboard regression net > Visual structure: full data view > matches t
         div
           div
             div
-        div.chart-container-lg
+        div.chart-container-lg[role=img]
           div[testid=responsive-container]
             div[testid=radar-chart]
               div[testid=radar]
@@ -294,7 +294,7 @@ exports[`Dashboard regression net > Visual structure: full data view > matches t
         div
           div
             div
-        div.chart-container-lg
+        div.chart-container-lg[role=img]
           div[testid=responsive-container]
             div[testid=radar-chart]
               div[testid=radar]
@@ -306,7 +306,7 @@ exports[`Dashboard regression net > Visual structure: full data view > matches t
           div
             div
             div
-        div.chart-container-md
+        div.chart-container-md[role=img]
           div[testid=responsive-container]
             div[testid=line-chart]
               div[testid=line]
@@ -317,7 +317,7 @@ exports[`Dashboard regression net > Visual structure: full data view > matches t
           div
             div
             div
-        div.chart-container-md
+        div.chart-container-md[role=img]
           div[testid=responsive-container]
             div[testid=bar-chart]
               div[testid=bar]
@@ -329,7 +329,7 @@ exports[`Dashboard regression net > Visual structure: full data view > matches t
           div
             div
             div
-        div.chart-container-sm
+        div.chart-container-sm[role=img]
           div[testid=responsive-container]
             div[testid=area-chart]
               defs

@@ -126,10 +126,7 @@ export default function Dashboard() {
 
     try {
       const node = dashboardRef.current;
-      const [{ toPng }, { jsPDF }] = await Promise.all([
-        import("html-to-image"),
-        import("jspdf"),
-      ]);
+      const [{ toPng }, { jsPDF }] = await Promise.all([import("html-to-image"), import("jspdf")]);
 
       document.head.appendChild(deblur);
 
@@ -172,9 +169,7 @@ export default function Dashboard() {
 
       const bgColor = getComputedStyle(document.body).backgroundColor;
       const rgb = bgColor.match(/(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
-      const [bgR, bgG, bgB] = rgb
-        ? [Number(rgb[1]), Number(rgb[2]), Number(rgb[3])]
-        : [5, 6, 10];
+      const [bgR, bgG, bgB] = rgb ? [Number(rgb[1]), Number(rgb[2]), Number(rgb[3])] : [5, 6, 10];
 
       const pdf = new jsPDF({
         orientation: pageWidth >= pageHeight ? "landscape" : "portrait",
@@ -207,7 +202,11 @@ export default function Dashboard() {
       pdf.setFont("helvetica", "normal");
       pdf.setFontSize(Math.round(11 * scale));
       pdf.setTextColor(0x9f, 0xb2, 0xc8);
-      pdf.text("WhatsApp insights in seconds", padX + titleWidth + Math.round(14 * scale), baseline);
+      pdf.text(
+        "WhatsApp insights in seconds",
+        padX + titleWidth + Math.round(14 * scale),
+        baseline,
+      );
 
       // Make the whole banner a clickable backlink.
       pdf.link(0, 0, pageWidth, band, { url: SITE_URL });
@@ -242,13 +241,11 @@ export default function Dashboard() {
         />
       )}
 
-       <section className="container grid-gap-2xl">
-         <div className="dashboard-header">
-           <div>
-             <h2 className="dashboard-title">Dashboard</h2>
-            {!hasData && (
-              <p className="dashboard-subtitle">Drop your exported WhatsApp .txt.</p>
-            )}
+      <section className="container grid-gap-2xl">
+        <div className="dashboard-header">
+          <div>
+            <h2 className="dashboard-title">Dashboard</h2>
+            {!hasData && <p className="dashboard-subtitle">Drop your exported WhatsApp .txt.</p>}
           </div>
           {hasData && (
             <div className="export-controls export-hide">
@@ -260,11 +257,14 @@ export default function Dashboard() {
                     onFocus={() => setShowStopTooltip(true)}
                     onBlur={() => setShowStopTooltip(false)}
                     className="inline-flex"
+                    tabIndex={0}
+                    role="button"
+                    aria-describedby={showStopTooltip ? "stopword-help" : undefined}
                   >
                     Filter stop-words
                   </span>
                   {showStopTooltip && (
-                    <div role="tooltip" className="stopword-tooltip">
+                    <div id="stopword-help" role="tooltip" className="stopword-tooltip">
                       Stop-words are common filler words ("the", "and", "is", "you") we drop so the
                       interesting terms pop in the word stats.
                     </div>
@@ -309,7 +309,11 @@ export default function Dashboard() {
             <div className="card grid-gap-md">
               <div className="tag">Timeline</div>
               <h3 className="card-header">Chat timeline</h3>
-              <div className="chart-container-xl chart-full-width">
+              <div
+                className="chart-container-xl chart-full-width"
+                role="img"
+                aria-label="Area chart: message volume over time."
+              >
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={stats.timelineData} margin={{ left: -12, right: 8 }}>
                     <defs>
@@ -363,7 +367,11 @@ export default function Dashboard() {
 
             <div className="grid chart-grid">
               <ChartCard title="Hourly rhythm">
-                <div className="chart-container-sm">
+                <div
+                  className="chart-container-sm"
+                  role="img"
+                  aria-label="Bar chart: messages per hour of the day, by person."
+                >
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={stats.hourlyStacked} barGap={-1}>
                       <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
@@ -402,7 +410,11 @@ export default function Dashboard() {
               </ChartCard>
 
               <ChartCard title="Top senders" subtitle="Messages by person">
-                <div className="chart-container-sm">
+                <div
+                  className="chart-container-sm"
+                  role="img"
+                  aria-label="Pie chart: share of messages sent by each person."
+                >
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
@@ -425,9 +437,16 @@ export default function Dashboard() {
               </ChartCard>
 
               <ChartCard title="Conversation starters" subtitle="First message after inactivity">
-                <div className="chart-container-md">
+                <div
+                  className="chart-container-md"
+                  role="img"
+                  aria-label="Bar chart: number of conversations each person started after a period of inactivity."
+                >
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={stats.conversationStartersData} margin={{ left: -10, right: 10 }}>
+                    <BarChart
+                      data={stats.conversationStartersData}
+                      margin={{ left: -10, right: 10 }}
+                    >
                       <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
                       <XAxis dataKey="name" hide axisLine={false} tickLine={false} />
                       <YAxis
@@ -445,7 +464,12 @@ export default function Dashboard() {
                         cursor={{ fill: "rgba(255,255,255,0.04)" }}
                       />
                       <Bar dataKey="value" name="Starts" radius={[6, 6, 0, 0]} fill="#7cf9c0">
-                        <LabelList dataKey="name" position="top" fill="var(--muted)" fontSize={12} />
+                        <LabelList
+                          dataKey="name"
+                          position="top"
+                          fill="var(--muted)"
+                          fontSize={12}
+                        />
                         {stats.conversationStartersData.map((entry, index) => (
                           <Cell key={entry.name} fill={getColor(entry.name, index)} />
                         ))}
@@ -456,7 +480,11 @@ export default function Dashboard() {
               </ChartCard>
 
               <ChartCard title="Monthly footprint">
-                <div className="chart-container-lg">
+                <div
+                  className="chart-container-lg"
+                  role="img"
+                  aria-label="Radar chart: message activity by month of the year, per person."
+                >
                   <ResponsiveContainer width="100%" height="100%">
                     <RadarChart data={stats.monthlyRadar} outerRadius={showLegend ? 90 : 110}>
                       <PolarGrid stroke="rgba(255,255,255,0.08)" />
@@ -485,7 +513,9 @@ export default function Dashboard() {
                         );
                       })}
                       {showLegend && (
-                        <Legend wrapperStyle={{ fontSize: 11, maxHeight: 50, overflow: "hidden" }} />
+                        <Legend
+                          wrapperStyle={{ fontSize: 11, maxHeight: 50, overflow: "hidden" }}
+                        />
                       )}
                     </RadarChart>
                   </ResponsiveContainer>
@@ -493,7 +523,11 @@ export default function Dashboard() {
               </ChartCard>
 
               <ChartCard title="Weekday footprint">
-                <div className="chart-container-lg">
+                <div
+                  className="chart-container-lg"
+                  role="img"
+                  aria-label="Radar chart: message activity by day of the week, per person."
+                >
                   <ResponsiveContainer width="100%" height="100%">
                     <RadarChart data={stats.weekdayRadar} outerRadius={showLegend ? 90 : 110}>
                       <PolarGrid stroke="rgba(255,255,255,0.08)" />
@@ -522,7 +556,9 @@ export default function Dashboard() {
                         );
                       })}
                       {showLegend && (
-                        <Legend wrapperStyle={{ fontSize: 11, maxHeight: 50, overflow: "hidden" }} />
+                        <Legend
+                          wrapperStyle={{ fontSize: 11, maxHeight: 50, overflow: "hidden" }}
+                        />
                       )}
                     </RadarChart>
                   </ResponsiveContainer>
@@ -533,7 +569,11 @@ export default function Dashboard() {
             {stats.hasSentiment && (
               <div className="grid chart-grid">
                 <ChartCard title="Mood lanes by person" subtitle="Daily mean sentiment (−1 to 1)">
-                  <div className="chart-container-md">
+                  <div
+                    className="chart-container-md"
+                    role="img"
+                    aria-label="Line chart: daily mean sentiment per person, ranging from −1 (negative) to 1 (positive)."
+                  >
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={stats.sentimentLaneData} margin={{ left: -4, right: 8 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
@@ -579,7 +619,11 @@ export default function Dashboard() {
                   title="Polarity mix per person"
                   subtitle="Share of positive / neutral / negative messages"
                 >
-                  <div className="chart-container-md">
+                  <div
+                    className="chart-container-md"
+                    role="img"
+                    aria-label="Stacked bar chart: share of positive, neutral, and negative messages per person."
+                  >
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart
                         data={stats.sentimentStacked}
@@ -612,17 +656,35 @@ export default function Dashboard() {
                           formatter={(v: number) => `${v}%`}
                           cursor={{ fill: "rgba(255,255,255,0.04)" }}
                         />
-                        <Bar dataKey="pos" stackId="sent" name="Positive" radius={[4, 4, 0, 0]} fill="#7cf9c0">
+                        <Bar
+                          dataKey="pos"
+                          stackId="sent"
+                          name="Positive"
+                          radius={[4, 4, 0, 0]}
+                          fill="#7cf9c0"
+                        >
                           {stats.sentimentStacked.map((entry, idx) => (
                             <Cell key={`${entry.name}-pos`} opacity={sentimentOpacity(idx)} />
                           ))}
                         </Bar>
-                        <Bar dataKey="neu" stackId="sent" name="Neutral" radius={[0, 0, 0, 0]} fill="#ffd166">
+                        <Bar
+                          dataKey="neu"
+                          stackId="sent"
+                          name="Neutral"
+                          radius={[0, 0, 0, 0]}
+                          fill="#ffd166"
+                        >
                           {stats.sentimentStacked.map((entry, idx) => (
                             <Cell key={`${entry.name}-neu`} opacity={sentimentOpacity(idx)} />
                           ))}
                         </Bar>
-                        <Bar dataKey="neg" stackId="sent" name="Negative" radius={[0, 0, 4, 4]} fill="#ff7edb">
+                        <Bar
+                          dataKey="neg"
+                          stackId="sent"
+                          name="Negative"
+                          radius={[0, 0, 4, 4]}
+                          fill="#ff7edb"
+                        >
                           {stats.sentimentStacked.map((entry, idx) => (
                             <Cell key={`${entry.name}-neg`} opacity={sentimentOpacity(idx)} />
                           ))}
@@ -634,7 +696,11 @@ export default function Dashboard() {
                 </ChartCard>
 
                 <ChartCard title="Overall mood drift" subtitle="Weighted by message volume">
-                  <div className="chart-container-sm">
+                  <div
+                    className="chart-container-sm"
+                    role="img"
+                    aria-label="Area chart: overall conversation sentiment over time, weighted by message volume."
+                  >
                     <ResponsiveContainer width="100%" height="100%">
                       <AreaChart data={stats.sentimentTimeline} margin={{ left: -8, right: 8 }}>
                         <defs>
@@ -694,13 +760,13 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {summary?.journey && (
-              <JourneySection journey={summary.journey} colorMap={colorMap} />
-            )}
+            {summary?.journey && <JourneySection journey={summary.journey} colorMap={colorMap} />}
           </>
         )}
 
-        {!hasData && <UploadSection error={error} onFileChange={onFileChange} onDrop={handleDrop} />}
+        {!hasData && (
+          <UploadSection error={error} onFileChange={onFileChange} onDrop={handleDrop} />
+        )}
       </section>
     </main>
   );

@@ -14,11 +14,21 @@ vi.mock("recharts", () => ({
   ResponsiveContainer: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="responsive-container">{children}</div>
   ),
-  AreaChart: ({ children }: { children: React.ReactNode }) => <div data-testid="area-chart">{children}</div>,
-  BarChart: ({ children }: { children: React.ReactNode }) => <div data-testid="bar-chart">{children}</div>,
-  LineChart: ({ children }: { children: React.ReactNode }) => <div data-testid="line-chart">{children}</div>,
-  PieChart: ({ children }: { children: React.ReactNode }) => <div data-testid="pie-chart">{children}</div>,
-  RadarChart: ({ children }: { children: React.ReactNode }) => <div data-testid="radar-chart">{children}</div>,
+  AreaChart: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="area-chart">{children}</div>
+  ),
+  BarChart: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="bar-chart">{children}</div>
+  ),
+  LineChart: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="line-chart">{children}</div>
+  ),
+  PieChart: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="pie-chart">{children}</div>
+  ),
+  RadarChart: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="radar-chart">{children}</div>
+  ),
   Area: () => <div data-testid="area" />,
   Bar: () => <div data-testid="bar" />,
   Cell: () => <div data-testid="cell" />,
@@ -115,7 +125,7 @@ describe("Dashboard", () => {
     it("shows loading overlay during file processing", async () => {
       const { analyzeText } = await import("../lib/wasm");
       (analyzeText as Mock).mockImplementation(
-        () => new Promise((resolve) => setTimeout(() => resolve(createMockSummary()), 100))
+        () => new Promise((resolve) => setTimeout(() => resolve(createMockSummary()), 100)),
       );
 
       render(<Dashboard />);
@@ -154,9 +164,12 @@ describe("Dashboard", () => {
       fireEvent.click(analyzeBtn);
 
       // Wait for data to render
-      await waitFor(() => {
-        expect(screen.getByText("Chat timeline")).toBeInTheDocument();
-      }, { timeout: 2000 });
+      await waitFor(
+        () => {
+          expect(screen.getByText("Chat timeline")).toBeInTheDocument();
+        },
+        { timeout: 2000 },
+      );
 
       return mockSummary;
     };
@@ -264,9 +277,12 @@ describe("Dashboard", () => {
 
       fireEvent.click(screen.getByRole("button", { name: "Analyze" }));
 
-      await waitFor(() => {
-        expect(screen.getByText("Journey Through Your Messages")).toBeInTheDocument();
-      }, { timeout: 2000 });
+      await waitFor(
+        () => {
+          expect(screen.getByText("Journey Through Your Messages")).toBeInTheDocument();
+        },
+        { timeout: 2000 },
+      );
 
       return mockSummary;
     };
@@ -327,9 +343,12 @@ describe("Dashboard", () => {
 
       fireEvent.click(screen.getByRole("button", { name: "Analyze" }));
 
-      await waitFor(() => {
-        expect(screen.getByText("Mood lanes by person")).toBeInTheDocument();
-      }, { timeout: 2000 });
+      await waitFor(
+        () => {
+          expect(screen.getByText("Mood lanes by person")).toBeInTheDocument();
+        },
+        { timeout: 2000 },
+      );
 
       expect(screen.getByText("Polarity mix per person")).toBeInTheDocument();
       expect(screen.getByText("Overall mood drift")).toBeInTheDocument();
@@ -354,9 +373,12 @@ describe("Dashboard", () => {
 
       fireEvent.click(screen.getByRole("button", { name: "Analyze" }));
 
-      await waitFor(() => {
-        expect(screen.getByText("Chat timeline")).toBeInTheDocument();
-      }, { timeout: 2000 });
+      await waitFor(
+        () => {
+          expect(screen.getByText("Chat timeline")).toBeInTheDocument();
+        },
+        { timeout: 2000 },
+      );
     };
 
     it("toggles stopword filter", async () => {
@@ -367,6 +389,23 @@ describe("Dashboard", () => {
 
       fireEvent.click(toggle);
       expect(toggle).not.toBeChecked();
+    });
+
+    it("makes the stop-word help trigger keyboard-focusable and wires aria-describedby", async () => {
+      await setupWithData();
+
+      const trigger = screen.getByText("Filter stop-words");
+      expect(trigger).toHaveAttribute("tabindex", "0");
+      expect(trigger).toHaveAttribute("role", "button");
+      expect(trigger).not.toHaveAttribute("aria-describedby");
+
+      fireEvent.focus(trigger);
+      const tip = screen.getByRole("tooltip");
+      expect(tip).toHaveAttribute("id", "stopword-help");
+      expect(trigger).toHaveAttribute("aria-describedby", "stopword-help");
+
+      fireEvent.blur(trigger);
+      expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
     });
 
     it("opens color configuration modal", async () => {
@@ -414,7 +453,10 @@ describe("Dashboard", () => {
       const h2 = screen.getByRole("heading", { level: 2, name: "Dashboard" });
       expect(h2).toBeInTheDocument();
 
-      const h3 = screen.getByRole("heading", { level: 3, name: "Upload your chat to see insights" });
+      const h3 = screen.getByRole("heading", {
+        level: 3,
+        name: "Upload your chat to see insights",
+      });
       expect(h3).toBeInTheDocument();
     });
 
