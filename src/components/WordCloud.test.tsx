@@ -72,4 +72,19 @@ describe("WordCloud", () => {
     expect(screen.getByText("hello")).toBeInTheDocument();
     expect(screen.getByText("world")).toBeInTheDocument();
   });
+
+  it("exposes the cloud as an image with a descriptive accessible name", () => {
+    const words: CloudWord[] = [
+      { label: "hello", value: 5 },
+      { label: "world", value: 3 },
+    ];
+
+    render(<WordCloud words={words} height={200} />);
+
+    const img = screen.getByRole("img");
+    expect(img.tagName.toLowerCase()).toBe("svg");
+    const label = img.getAttribute("aria-label") ?? "";
+    expect(label).toMatch(/word cloud/i);
+    expect(label).toContain("hello");
+  });
 });

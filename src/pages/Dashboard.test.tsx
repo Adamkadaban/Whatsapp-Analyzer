@@ -369,6 +369,23 @@ describe("Dashboard", () => {
       expect(toggle).not.toBeChecked();
     });
 
+    it("makes the stop-word help trigger keyboard-focusable and wires aria-describedby", async () => {
+      await setupWithData();
+
+      const trigger = screen.getByText("Filter stop-words");
+      expect(trigger).toHaveAttribute("tabindex", "0");
+      expect(trigger).toHaveAttribute("role", "button");
+      expect(trigger).not.toHaveAttribute("aria-describedby");
+
+      fireEvent.focus(trigger);
+      const tip = screen.getByRole("tooltip");
+      expect(tip).toHaveAttribute("id", "stopword-help");
+      expect(trigger).toHaveAttribute("aria-describedby", "stopword-help");
+
+      fireEvent.blur(trigger);
+      expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+    });
+
     it("opens color configuration modal", async () => {
       await setupWithData();
 

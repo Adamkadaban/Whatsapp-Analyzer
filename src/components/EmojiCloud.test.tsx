@@ -72,4 +72,19 @@ describe("EmojiCloud", () => {
     expect(screen.getByText("😀")).toBeInTheDocument();
     expect(screen.getByText("🔥")).toBeInTheDocument();
   });
+
+  it("exposes the cloud as an image with a descriptive accessible name", () => {
+    const words: CloudWord[] = [
+      { label: "😀", value: 5 },
+      { label: "🔥", value: 4 },
+    ];
+
+    render(<EmojiCloud words={words} height={200} />);
+
+    const img = screen.getByRole("img");
+    expect(img.tagName.toLowerCase()).toBe("svg");
+    const label = img.getAttribute("aria-label") ?? "";
+    expect(label).toMatch(/emoji cloud/i);
+    expect(label).toContain("😀");
+  });
 });

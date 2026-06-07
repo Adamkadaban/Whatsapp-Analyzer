@@ -406,6 +406,23 @@ section {
 
 .relative { position: relative; }
 
+/*
+ * Visually-hidden utility: removes content from the visual layout while keeping
+ * it available to assistive technology. Use where colour alone conveys state,
+ * or to attach a text alternative to a non-text element.
+ */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* Typography utilities */
 .text-muted { color: var(--muted); }
 .text-primary { color: var(--primary); }
