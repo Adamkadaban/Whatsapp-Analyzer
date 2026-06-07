@@ -19,10 +19,7 @@
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { vi, describe, it, expect, beforeEach, afterEach, type Mock } from "vitest";
 import Dashboard from "./Dashboard";
-import {
-  createMockSummary,
-  createEmptySummary,
-} from "../lib/__fixtures__/mockSummary";
+import { createMockSummary, createEmptySummary } from "../lib/__fixtures__/mockSummary";
 import type { Summary } from "../lib/types";
 
 // ---- Mocks (mirror Dashboard.test.tsx so DOM is deterministic) -------------
@@ -36,11 +33,21 @@ vi.mock("recharts", () => ({
   ResponsiveContainer: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="responsive-container">{children}</div>
   ),
-  AreaChart: ({ children }: { children: React.ReactNode }) => <div data-testid="area-chart">{children}</div>,
-  BarChart: ({ children }: { children: React.ReactNode }) => <div data-testid="bar-chart">{children}</div>,
-  LineChart: ({ children }: { children: React.ReactNode }) => <div data-testid="line-chart">{children}</div>,
-  PieChart: ({ children }: { children: React.ReactNode }) => <div data-testid="pie-chart">{children}</div>,
-  RadarChart: ({ children }: { children: React.ReactNode }) => <div data-testid="radar-chart">{children}</div>,
+  AreaChart: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="area-chart">{children}</div>
+  ),
+  BarChart: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="bar-chart">{children}</div>
+  ),
+  LineChart: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="line-chart">{children}</div>
+  ),
+  PieChart: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="pie-chart">{children}</div>
+  ),
+  RadarChart: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="radar-chart">{children}</div>
+  ),
   Area: () => <div data-testid="area" />,
   Bar: () => <div data-testid="bar" />,
   Cell: () => <div data-testid="cell" />,
@@ -84,7 +91,7 @@ vi.mock("../components/EmojiCloud", () => ({
  * resolves once the data view has rendered. This exercises the same code path
  * a user would, so it stays valid no matter how the internals are refactored.
  */
-async function loadDashboard(summary: Summary) {
+async function loadDashboard(summary: Summary, readyMatcher: string | RegExp = "Chat timeline") {
   const { analyzeText } = await import("../lib/wasm");
   (analyzeText as Mock).mockResolvedValue(summary);
 
@@ -102,10 +109,10 @@ async function loadDashboard(summary: Summary) {
 
   fireEvent.click(screen.getByRole("button", { name: "Analyze" }));
 
-  // "Chat timeline" is a stable, always-present header in the data view.
+  // Wait for a stable header of the resulting view (data view or empty state).
   await waitFor(
     () => {
-      expect(screen.getByText("Chat timeline")).toBeInTheDocument();
+      expect(screen.getByText(readyMatcher)).toBeInTheDocument();
     },
     { timeout: 2000 },
   );
@@ -131,15 +138,10 @@ function normalizeTree(root: Element): string {
     const tag = el.tagName.toLowerCase();
     const id = el.id ? `#${el.id}` : "";
     const cls = el.getAttribute("class");
-    const classPart = cls
-      ? "." + cls.trim().split(/\s+/).sort().join(".")
-      : "";
+    const classPart = cls ? "." + cls.trim().split(/\s+/).sort().join(".") : "";
     const role = el.getAttribute("role");
     const testid = el.getAttribute("data-testid");
-    const attrs = [
-      role ? `role=${role}` : "",
-      testid ? `testid=${testid}` : "",
-    ]
+    const attrs = [role ? `role=${role}` : "", testid ? `testid=${testid}` : ""]
       .filter(Boolean)
       .join(" ");
     const attrPart = attrs ? `[${attrs}]` : "";
@@ -186,9 +188,7 @@ describe("Dashboard regression net", () => {
       const { container } = await loadDashboard(createMockSummary());
 
       // Title / header
-      expect(
-        screen.getByRole("heading", { level: 2, name: "Dashboard" }),
-      ).toBeInTheDocument();
+      expect(screen.getByRole("heading", { level: 2, name: "Dashboard" })).toBeInTheDocument();
 
       // Timeline
       expect(screen.getByText("Chat timeline")).toBeInTheDocument();
@@ -198,9 +198,14 @@ describe("Dashboard regression net", () => {
       expect(screen.getByText("Per-person stats")).toBeInTheDocument();
       const table = screen.getByRole("table");
       const head = within(table);
-      ["Person", "Total words", "Unique words", "Avg words/msg", "Longest msg (words)", "Top emojis"].forEach(
-        (col) => expect(head.getByText(col)).toBeInTheDocument(),
-      );
+      [
+        "Person",
+        "Total words",
+        "Unique words",
+        "Avg words/msg",
+        "Longest msg (words)",
+        "Top emojis",
+      ].forEach((col) => expect(head.getByText(col)).toBeInTheDocument());
       // Each sender appears as a row
       expect(head.getByText("Alice")).toBeInTheDocument();
       expect(head.getByText("You")).toBeInTheDocument();
@@ -260,14 +265,10 @@ describe("Dashboard regression net", () => {
       expect(exportBtn).toBeInTheDocument();
       expect(exportBtn).toBeEnabled();
 
-      expect(
-        screen.getByRole("button", { name: "Upload another chat" }),
-      ).toBeEnabled();
+      expect(screen.getByRole("button", { name: "Upload another chat" })).toBeEnabled();
 
       // The upload UI must NOT be present once data is loaded
-      expect(
-        screen.queryByText("Upload your chat to see insights"),
-      ).not.toBeInTheDocument();
+      expect(screen.queryByText("Upload your chat to see insights")).not.toBeInTheDocument();
 
       // sanity: clouds received the fixture data
       expect(container.querySelector('[data-testid="word-cloud"]')).toHaveAttribute(
@@ -306,12 +307,8 @@ describe("Dashboard regression net", () => {
       const dialog = await screen.findByRole("dialog");
       expect(within(dialog).getByText("Configure user colors")).toBeInTheDocument();
       // Per-person colour pickers are present
-      expect(
-        within(dialog).getByLabelText(/Choose color for Alice/i),
-      ).toBeInTheDocument();
-      expect(
-        within(dialog).getByLabelText(/Choose color for You/i),
-      ).toBeInTheDocument();
+      expect(within(dialog).getByLabelText(/Choose color for Alice/i)).toBeInTheDocument();
+      expect(within(dialog).getByLabelText(/Choose color for You/i)).toBeInTheDocument();
 
       fireEvent.click(screen.getByRole("button", { name: /Close/i }));
 
@@ -336,9 +333,7 @@ describe("Dashboard regression net", () => {
       expect(screen.queryByText("Overall mood drift")).not.toBeInTheDocument();
 
       // ...but journey + the rest stay.
-      expect(
-        screen.getByText("Journey Through Your Messages"),
-      ).toBeInTheDocument();
+      expect(screen.getByText("Journey Through Your Messages")).toBeInTheDocument();
       expect(screen.getByText("Chat timeline")).toBeInTheDocument();
     });
 
@@ -346,9 +341,7 @@ describe("Dashboard regression net", () => {
       const summary: Summary = { ...createMockSummary(), journey: undefined };
       await loadDashboard(summary);
 
-      expect(
-        screen.queryByText("Journey Through Your Messages"),
-      ).not.toBeInTheDocument();
+      expect(screen.queryByText("Journey Through Your Messages")).not.toBeInTheDocument();
 
       // Sentiment + the rest stay.
       expect(screen.getByText("Mood lanes by person")).toBeInTheDocument();
@@ -357,46 +350,24 @@ describe("Dashboard regression net", () => {
   });
 
   describe("Functional: empty / near-empty summary", () => {
-    it("renders the dashboard shell and hides all optional sections", async () => {
-      const { container } = await loadDashboard(createEmptySummary());
+    it("shows the friendly empty state and hides the dashboard + controls", async () => {
+      const { container } = await loadDashboard(createEmptySummary(), "No messages found");
 
-      // Shell sections that always render with data present
-      expect(screen.getByText("Chat timeline")).toBeInTheDocument();
-      expect(screen.getByText("Per-person stats")).toBeInTheDocument();
-      expect(screen.getByText("Top phrases per sender")).toBeInTheDocument();
-      expect(screen.getByText("Most common words")).toBeInTheDocument();
-      expect(screen.getByText("Most used emojis")).toBeInTheDocument();
+      // The friendly empty state replaces the dashboard for zero-message results.
+      expect(screen.getByText(/We couldn.t find any messages/)).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Upload another chat" })).toBeEnabled();
 
-      // KPI labels still present (values fall back to placeholders)
-      expect(screen.getByText("Total messages")).toBeInTheDocument();
-      expect(screen.getByText("Top word")).toBeInTheDocument();
+      // No charts / KPIs / export controls render for an empty result.
+      expect(screen.queryByText("Chat timeline")).not.toBeInTheDocument();
+      expect(screen.queryByText("Per-person stats")).not.toBeInTheDocument();
+      expect(screen.queryByText("Total messages")).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Export PDF" })).not.toBeInTheDocument();
+      expect(container.querySelector('[data-testid="word-cloud"]')).toBeNull();
 
-      // Optional sections hidden because their data is empty/absent
-      expect(screen.queryByText("Mood lanes by person")).not.toBeInTheDocument();
-      expect(
-        screen.queryByText("Journey Through Your Messages"),
-      ).not.toBeInTheDocument();
-
-      // Empty clouds + phrases empty-state
-      expect(container.querySelector('[data-testid="word-cloud"]')).toHaveAttribute(
-        "data-word-count",
-        "0",
-      );
-      expect(container.querySelector('[data-testid="emoji-cloud"]')).toHaveAttribute(
-        "data-word-count",
-        "0",
-      );
-      expect(screen.getByText("No phrases yet.")).toBeInTheDocument();
-
-      // Controls are still rendered (data view active)
-      expect(screen.getByRole("button", { name: "Export PDF" })).toBeEnabled();
-
-      // Structural snapshot of the empty/near-empty data view
+      // Structural snapshot of the empty-result view
       const main = container.querySelector("main");
       expect(main).not.toBeNull();
-      expect(normalizeTree(main as Element)).toMatchSnapshot(
-        "empty-summary-structure",
-      );
+      expect(normalizeTree(main as Element)).toMatchSnapshot("empty-summary-structure");
     });
   });
 
@@ -405,9 +376,7 @@ describe("Dashboard regression net", () => {
       const { container } = render(<Dashboard />);
       const main = container.querySelector("main");
       expect(main).not.toBeNull();
-      expect(normalizeTree(main as Element)).toMatchSnapshot(
-        "upload-view-structure",
-      );
+      expect(normalizeTree(main as Element)).toMatchSnapshot("upload-view-structure");
     });
   });
 
@@ -419,14 +388,10 @@ describe("Dashboard regression net", () => {
 
       // (1) Full normalized structural tree — catches any change to the
       // rendered DOM shape (cards added/removed/reordered/renested).
-      expect(normalizeTree(main as Element)).toMatchSnapshot(
-        "full-data-structure",
-      );
+      expect(normalizeTree(main as Element)).toMatchSnapshot("full-data-structure");
 
       // (2) Semantic landmark outline — the ordered section/header map.
-      expect(landmarkOutline(main as Element)).toMatchSnapshot(
-        "full-data-landmarks",
-      );
+      expect(landmarkOutline(main as Element)).toMatchSnapshot("full-data-landmarks");
     });
   });
 });

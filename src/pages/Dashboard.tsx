@@ -28,6 +28,7 @@ import PieTooltip from "../components/PieTooltip";
 import StatCard from "../components/StatCard";
 import {
   ColorModal,
+  EmptyResultState,
   JourneySection,
   LoadingOverlay,
   PhrasesSection,
@@ -63,6 +64,11 @@ export default function Dashboard() {
   const stats = useDashboardStats(summary, filterStopwords);
 
   const hasData = Boolean(summary);
+  // A summary can come back successfully yet contain zero parseable messages
+  // (empty chat, wrong file, media-only export, etc). `total_messages` is the
+  // authoritative count from the WASM analyzer, so treat 0 as the empty result.
+  const isEmptyResult = summary !== null && summary.total_messages === 0;
+  const hasInsights = summary !== null && summary.total_messages > 0;
   const senderCount = summary?.by_sender.length ?? 0;
   const showLegend = senderCount <= MAX_LEGEND_SENDERS;
 
@@ -247,7 +253,7 @@ export default function Dashboard() {
             <h2 className="dashboard-title">Dashboard</h2>
             {!hasData && <p className="dashboard-subtitle">Drop your exported WhatsApp .txt.</p>}
           </div>
-          {hasData && (
+          {hasInsights && (
             <div className="export-controls export-hide">
               <div className="switch-row">
                 <div className="export-dropdown">
@@ -301,7 +307,7 @@ export default function Dashboard() {
           )}
         </div>
 
-        {hasData && (
+        {hasInsights && (
           <>
             {exportError && <div className="error-text">{exportError}</div>}
 
@@ -763,6 +769,8 @@ export default function Dashboard() {
             {summary?.journey && <JourneySection journey={summary.journey} colorMap={colorMap} />}
           </>
         )}
+
+        {isEmptyResult && <EmptyResultState onReset={resetToUpload} />}
 
         {!hasData && (
           <UploadSection error={error} onFileChange={onFileChange} onDrop={handleDrop} />

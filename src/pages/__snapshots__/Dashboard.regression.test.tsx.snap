@@ -1,134 +1,25 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`Dashboard regression net > Functional: empty / near-empty summary > renders the dashboard shell and hides all optional sections > empty-summary-structure 1`] = `
+exports[`Dashboard regression net > Functional: empty / near-empty summary > shows the friendly empty state and hides the dashboard + controls > empty-summary-structure 1`] = `
 "main.relative
   section.container.grid-gap-2xl
     div.dashboard-header
       div
         h2.dashboard-title
-      div.export-controls.export-hide
-        div.switch-row
-          div.export-dropdown
-            span.inline-flex[role=button]
-          label.switch
-            input
-            span.slider
-        button.btn.ghost
-        button.btn.ghost
-        button.btn.ghost
-    div.card.grid-gap-md
+    div.card.empty-result[role=status]
       div.tag
       h3.card-header
-      div.chart-container-xl.chart-full-width[role=img]
-        div[testid=responsive-container]
-          div[testid=area-chart]
-            defs
-              lineargradient#timelineGradient
-                stop
-                stop
-            div[testid=area]
-      div.text-muted.text-xs
-    div.card.grid-gap-md
-      div.tag
-      h3.card-header
-      div.stats-table-wrapper
-        table.stats-table
-          thead
-            tr
-              th
-              th
-              th
-              th
-              th
-              th
-          tbody
-    div.grid.stat-grid
-      div.card.glow-ring
-        span.badge
-        div
-        div
-      div.card.glow-ring
-        span.badge
-        div
-        div
-      div.card.glow-ring
-        span.badge
-        div
-      div.card.glow-ring
-        span.badge
-        div
-      div.card.glow-ring
-        span.badge
-        div
-      div.card.glow-ring
-        span.badge
-        div
-        div
-      div.card.glow-ring
-        span.badge
-        div
-        div
-      div.card.glow-ring
-        span.badge
-        div
-        div
-    div.chart-grid.grid
-      div.card
-        div
-          div
-            div
-        div.chart-container-sm[role=img]
-          div[testid=responsive-container]
-            div[testid=bar-chart]
-              div[testid=legend]
-      div.card
-        div
-          div
-            div
-            div
-        div.chart-container-sm[role=img]
-          div[testid=responsive-container]
-            div[testid=pie-chart]
-              div[testid=pie]
-              div[testid=legend]
-      div.card
-        div
-          div
-            div
-            div
-        div.chart-container-md[role=img]
-          div[testid=responsive-container]
-            div[testid=bar-chart]
-              div[testid=bar]
-      div.card
-        div
-          div
-            div
-        div.chart-container-lg[role=img]
-          div[testid=responsive-container]
-            div[testid=radar-chart]
-              div[testid=legend]
-      div.card
-        div
-          div
-            div
-        div.chart-container-lg[role=img]
-          div[testid=responsive-container]
-            div[testid=radar-chart]
-              div[testid=legend]
-    div.grid-gap-lg
-      div.card.grid-gap-sm
-        div.tag
-        h3.card-header
-        div.text-muted
-      div.card.grid-gap-sm.min-h-card
-        div.tag
-        h3.card-header
-        div[testid=word-cloud]
-      div.card.grid-gap-sm.min-h-card
-        div.tag
-        h3.card-header
-        div[testid=emoji-cloud]"
+      p.empty-result-lead.m-0.text-muted
+      ul.empty-result-list.text-muted
+        li
+          strong.text-white
+          code.empty-result-code
+          code.empty-result-code
+        li
+        li
+          strong.text-white
+      div.empty-result-actions
+        button.btn"
 `;
 
 exports[`Dashboard regression net > Visual structure: full data view > matches the normalized DOM-structure and landmark snapshots > full-data-landmarks 1`] = `
