@@ -169,6 +169,11 @@ export default function Dashboard() {
         unit: "px",
         format: [canvasWidth, canvasHeight],
         compress: true,
+        // Without "px_scaling", jsPDF converts px → pt with a 96/72 (≈1.333)
+        // factor, so the MediaBox is silently clamped at 14400 userUnits and the
+        // bottom of tall dashboards is cut off. The hotfix uses the correct CSS
+        // 72/96 (0.75) factor, keeping our PDF_MAX_DIMENSION_PX page within limits.
+        hotfixes: ["px_scaling"],
       });
       pdf.addImage(imgData, "PNG", 0, 0, canvasWidth, canvasHeight, undefined, "FAST");
 

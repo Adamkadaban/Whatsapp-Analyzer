@@ -34,7 +34,13 @@ export const PROCESSING_VERY_SLOW_THRESHOLD_SEC = 30;
 // PDF Export
 // ============================================================================
 
-/** Maximum dimension (width or height in pixels) for PDF canvas to stay within jsPDF limits. */
+/**
+ * Maximum dimension (width or height in pixels) for PDF canvas to stay within jsPDF limits.
+ *
+ * jsPDF clamps any page dimension above 14,400 userUnits. The PDF export uses
+ * `unit: "px"` with the `px_scaling` hotfix (factor 72/96 = 0.75), so the safe
+ * pixel ceiling is 14,400 / 0.75 = 19,200px. We stay comfortably under that.
+ */
 export const PDF_MAX_DIMENSION_PX = 14000;
 
 /** Maximum scale factor for PDF rendering (for crispness). */
