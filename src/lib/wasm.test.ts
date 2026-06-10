@@ -18,12 +18,12 @@ const workerInstances: MockWorker[] = [];
 class MockWorker {
   onmessage: ((e: { data: unknown }) => void) | null = null;
   onerror: ((e: unknown) => void) | null = null;
-  postMessage = vi.fn<[WorkerRequestLike], void>();
+  postMessage = vi.fn<(req: WorkerRequestLike) => void>();
   terminate = vi.fn();
 
   constructor(
     public url: string | URL,
-    public options?: WorkerOptions
+    public options?: WorkerOptions,
   ) {
     workerInstances.push(this);
   }
@@ -132,7 +132,14 @@ describe("wasm worker client", () => {
     expect(() => worker.emitMessage({ id: id + 9999, type: "success", result: {} })).not.toThrow();
 
     let settled = false;
-    promise.then(() => { settled = true; }, () => { settled = true; });
+    promise.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
     await Promise.resolve();
     expect(settled).toBe(false);
 
