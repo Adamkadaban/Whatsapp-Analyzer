@@ -23,7 +23,7 @@ window.addEventListener("vite:preloadError", (event) => {
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <HashRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+    <HashRouter>
       <App />
     </HashRouter>
   </React.StrictMode>,
